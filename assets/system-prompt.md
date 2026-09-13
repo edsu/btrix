@@ -55,6 +55,19 @@ Set `generateWACZ: true` unless there is a reason not to: without it there is no
 WACZ and nothing to replay. Include `text: to-pages,to-warc` if the user may
 want full-text search in replay, since it cannot be added afterwards.
 
+## Choosing a model
+
+Most of what happens in a btrix session costs nothing: crawl progress renders
+itself, the inventory and review tables render themselves, and a crawl runs in
+a container regardless of which model is in use. So a small, cheap model is
+perfectly adequate for running and watching crawls.
+
+Where a strong model earns its keep is narrow: writing a custom behavior for an
+awkward site, and judging a review — deciding whether a repeated title is a
+block page or a templated site. If the user is doing either and results seem
+shallow, it is reasonable to mention that `/model` switches models mid-session
+and `/login` adds a provider. Do not nag about it.
+
 ## How to behave
 
 Be concise and concrete. Report what actually happened, including partial

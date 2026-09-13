@@ -67,6 +67,9 @@ export function firstRunPanel(state: AuthState): string[] {
 
 /** Shown once credentials exist, so the user knows what they are talking to. */
 export function readyHeader(state: AuthState, storeRoot: string): string[] {
-  const model = state.model ? `${state.model.provider}/${state.model.id}` : "no model";
-  return [`btrix — web archiving with Browsertrix Crawler`, `store ${storeRoot} · ${model}`];
+  return [`btrix — web archiving with Browsertrix Crawler`, `store ${storeRoot} · ${modelLabel(state.model)}`];
+}
+
+export function modelLabel(model: { provider: string; id: string } | undefined): string {
+  return model ? `${model.provider}/${model.id}` : "no model";
 }

@@ -25,7 +25,7 @@ import { applyNameCompletion, filterSuggestions, nameSuggestions, tokenBeforeCur
 import { readConfig } from "./src/config.ts";
 import { confirmCrawl } from "./src/confirm.ts";
 import { engineStatus } from "./src/engine.ts";
-import { firstRunPanel, probeAuth, readyHeader } from "./src/firstrun.ts";
+import { firstRunPanel, modelLabel, probeAuth, readyHeader } from "./src/firstrun.ts";
 import { buildInventory } from "./src/inventory.ts";
 import { listProfiles } from "./src/profile.ts";
 import { configPath, createTools, listConfigs } from "./src/tools.ts";
@@ -165,6 +165,20 @@ export default function (pi: ExtensionAPI) {
     return undefined;
   };
 
+  /** The footer's model line, in one place so it cannot drift out of date. */
+  const showModel = (ctx: ExtensionContext, label: string): void => {
+    if (!ctx.hasUI) return;
+    ctx.ui.setStatus("btrix", ctx.ui.theme.fg("dim", `${store.root} · ${label} · /model to change`));
+  };
+
+  // Switching with /model has to update the footer, or it quietly keeps
+  // reporting the model the session started with.
+  pi.on("model_select", async (event, ctx) => {
+    const model = (event as { model?: { provider?: string; id?: string } }).model;
+    showModel(ctx, model?.provider && model.id ? `${model.provider}/${model.id}` : "unknown model");
+    return undefined;
+  });
+
   /**
    * Open a url in the desktop browser. Only ever localhost and replayweb.page,
    * and only when the user pressed the key.
@@ -281,7 +295,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (ctx.hasUI && auth.ready) {
-      ctx.ui.setStatus("btrix", ctx.ui.theme.fg("dim", readyHeader(auth, store.root)[1] ?? ""));
+      showModel(ctx, modelLabel(auth.model));
 
       // Orient the user in three lines, without spending a turn on it. The
       // engine check is the important one: finding out that Docker is absent

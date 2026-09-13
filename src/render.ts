@@ -381,7 +381,9 @@ export function startupLines(info: StartupInfo, theme: ThemeLike = plainTheme): 
 
   const head = [theme.fg("accent", "btrix"), dim(inv.store.root)];
   if (inv.free !== undefined) head.push(dim(`${humanBytes(inv.free)} free`));
-  if (info.model) head.push(dim(info.model.replace(/^store .*? · /, "")));
+  // The model is worth naming, and worth saying is changeable: a btrix user
+  // has no reason to know that /model exists.
+  if (info.model) head.push(dim(`${info.model.replace(/^store .*? · /, "")} (/model to change)`));
 
   const empty = !inv.configs.length && !inv.archives.length;
   const facts: string[] = [];

@@ -141,6 +141,16 @@ describe("startupLines", () => {
     expect(out).toContain("1 config");
   });
 
+  it("names the model and says it can be changed", () => {
+    // A btrix user has no reason to know /model exists.
+    const out = startupLines(
+      { inv: inv(), engine: { usable: true }, model: "store /w/btrix · anthropic/claude-opus-5", adopted: [] },
+      plainTheme,
+    ).join("\n");
+    expect(out).toContain("anthropic/claude-opus-5");
+    expect(out).toContain("/model to change");
+  });
+
   it("leads with a missing container engine, since nothing works without one", () => {
     const out = startupLines(
       { inv: inv(), engine: { usable: false, problem: "No docker or podman found." }, adopted: [] },

@@ -44,6 +44,23 @@ Claude, ChatGPT or Copilot subscription, or set an API key such as
 `ANTHROPIC_API_KEY`. Crawling itself runs locally in a container and needs no
 account.
 
+## Providers and models
+
+| | |
+|---|---|
+| Switch mid-session | `/model` — Ctrl+S in the picker saves it as your startup default |
+| Add a provider | `/login` |
+| Choose at launch | `btrix --model anthropic/claude-haiku-4-5` |
+| See what is available | `btrix --list-models` |
+
+Worth knowing for this tool specifically: **most of a btrix session does not use
+the model at all.** Crawl progress, the inventory and the review tables all
+render themselves, and the crawl runs in a container regardless. A small cheap
+model is fine for running and watching crawls. Where a strong one earns its
+keep is narrow — writing a custom behavior for an awkward site, and judging a
+review, where deciding whether a repeated title is a block page or a templated
+site is the whole question.
+
 btrix is built on the [pi](https://pi.dev) agent harness, which comes along as a
 dependency; you do not need to install or know anything about it. If you already
 use pi, you can load btrix as an extension instead:

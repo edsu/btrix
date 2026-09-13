@@ -89,6 +89,17 @@ describe("extension wiring", () => {
     expect(s.flags.get("dir")).toMatchObject({ type: "string" });
   });
 
+  it("keeps the footer's model line current when the model changes", async () => {
+    // Set once at startup, it would quietly keep reporting the old model.
+    const s = stubApi();
+    extension(s.api);
+    const ctx = stubCtx();
+    await s.events.get("model_select")![0]!({ model: { provider: "openai", id: "gpt-5" } }, ctx);
+    const written = (ctx.ui.setStatus as any).mock.calls.map((c: any[]) => c[1]).join(" ");
+    expect(written).toContain("openai/gpt-5");
+    expect(written).toContain("/model to change");
+  });
+
   it("registers shortcuts for the things you would otherwise hunt for", () => {
     const s = stubApi();
     extension(s.api);
@@ -104,6 +115,7 @@ describe("extension wiring", () => {
     expect([...s.commands.keys()]).toEqual(["btrix"]);
     expect([...s.entryRenderers.keys()]).toEqual(["btrix-summary"]);
     expect([...s.events.keys()].sort()).toEqual([
+      "model_select",
       "session_shutdown",
       "session_start",
       "tool_call",
