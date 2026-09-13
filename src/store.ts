@@ -24,6 +24,8 @@ export interface Store {
   profilesDir: string;
   /** Runs that ended without producing a deliverable, kept for inspection. */
   failedDir: string;
+  /** Throwaway profile for the local scratch browser. Never your own. */
+  chromeProfileDir: string;
   settingsPath: string;
   /** How the root was chosen, for reporting back to the user. */
   source: "flag" | "env" | "existing" | "default";
@@ -41,6 +43,7 @@ runs/
 out/
 profiles/
 failed/
+chrome-profile/
 settings.json
 `;
 
@@ -52,6 +55,7 @@ export function storeAt(root: string, source: Store["source"]): Store {
     outDir: path.join(root, "out"),
     profilesDir: path.join(root, "profiles"),
     failedDir: path.join(root, "failed"),
+    chromeProfileDir: path.join(root, "chrome-profile"),
     settingsPath: path.join(root, "settings.json"),
     source,
   };

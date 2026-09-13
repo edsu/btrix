@@ -104,14 +104,15 @@ grep -o '"url": *"[^"]*"' collections/<name>/pages/extraPages.jsonl
 ## Working it out in a real browser first
 
 Do not write a behavior by guessing at selectors and running a crawl to find
-out. `btrix_browser` opens a real Chrome, inside the crawler's own container,
-on the page in question:
+out. `btrix_browser` opens a real browser on the page in question:
 
 ```
 btrix_browser  url=https://example.org/news
 ```
 
-Watch and click it at <http://localhost:6080>. Then `btrix_eval` runs
+By default that is a local Chrome, in a window on the desktop, where **F12
+gives real DevTools** — the element picker and the network panel are usually
+the fastest way to find what a behavior has to click. Then `btrix_eval` runs
 expressions against that live page, so the loop is seconds instead of a crawl:
 
 ```
@@ -130,16 +131,23 @@ exist, what does it match, does clicking it actually add items, and how many
 per click. `console.log` from evaluated code comes back too, which is the same
 channel a behavior reports on.
 
-Three things to know about it:
+`btrix_browser use=crawler` opens the container's browser instead, watched over
+noVNC at <http://localhost:6080>. That one *is* the browser the crawler runs —
+same build, same flags — so it is what to reach for when a selector works
+locally and the crawl still misses pages.
 
-- It is the **same Chrome the crawler uses**, in the same container, so a
-  selector that works here works in a crawl. It is not the user's own browser,
-  and nothing is saved.
-- It is a **throwaway**: one page at a time, closed when the session ends.
-- It cannot run a behavior *class* as the crawler would — there is no behavior
-  API shim in there. Work out the selectors and the interaction here, then put
-  them in the behavior and run a small crawl (`pageLimit: 2`) to check the real
-  thing, reading `behaviorScriptCustom` lines from the log.
+Three things to know:
+
+- Both are **throwaway browsers with a fresh profile**: nothing signed in,
+  nothing saved, one page at a time, closed when the session ends. Neither is
+  the browsing session the user lives in.
+- Neither can run a behavior *class* as the crawler would — there is no
+  behavior API shim in the page. Work out the selectors and the interaction
+  here, then put them in the behavior and run a small crawl (`pageLimit: 2`) to
+  check the real thing, reading `behaviorScriptCustom` lines from the log.
+- Anything inside an **iframe** is invisible to `btrix_eval`, which runs in the
+  main frame. A behavior for an embedded player or comment system cannot be
+  worked out this way.
 
 - **Serving a WACZ for replay** — a Range + CORS static server
   for loading a large local `.wacz` into ReplayWeb.page:

@@ -12,10 +12,12 @@ complete, and mostly do not care how the crawler works.
 - `btrix_view` — serve a finished archive and get a ReplayWeb.page link.
 - `btrix_review` — what a finished crawl actually captured, as candidates to judge.
 - `btrix_profile` — start a browser for the user to log into, for authenticated crawls.
-- `btrix_browser` / `btrix_eval` — a throwaway browser in the crawler's container, and
-  JavaScript evaluated against the page it has open. This is how to work out a custom
-  behavior: check a selector, click something, count again. It is never the user's own
-  browser.
+- `btrix_browser` / `btrix_eval` — a throwaway browser and JavaScript evaluated against
+  the page it has open. This is how to work out a custom behavior: check a selector,
+  click something, count again. A local Chrome by default, where the user gets real
+  DevTools; `use=crawler` opens the container's browser, which is the exact one the
+  crawler runs. Either way it has a fresh profile and is never the user's own browsing
+  session.
 - `read`, `write`, `edit`, `bash` — for writing configs and looking at output.
 
 Skills load on demand. Read them when relevant rather than guessing:

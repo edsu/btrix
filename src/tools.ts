@@ -756,14 +756,18 @@ export function createTools(
     name: "btrix_browser",
     label: "Scratch browser",
     description:
-      "Open a real browser on a page, inside the crawler's own container, for working out what a custom behavior " +
-      "needs to do. Watch and click it at the noVNC url in the result. This is a throwaway browser for " +
-      "experimenting — it is not the user's own browser, and it saves nothing. Call with no url to see what it " +
-      "currently has open, or stop set to true to close it.",
+      "Open a real browser on a page, for working out what a custom behavior needs to do. Defaults to a local " +
+      "Chrome in a native window, with real DevTools on F12; pass crawler for the browser the crawler itself " +
+      "runs, watched over noVNC, which is worth trying when a selector works locally but fails in a crawl. " +
+      "Either way it is a throwaway browser with a fresh profile — never the user's own browsing session, and " +
+      "it saves nothing. Call with no url to see what is open, or stop to close it.",
     promptSnippet: "Open a real browser on a page to work out a behavior",
     parameters: Type.Object({
       url: Type.Optional(Type.String({ description: "Page to open. Omit to report what is already open." })),
       stop: Type.Optional(Type.Boolean({ description: "Close the browser." })),
+      use: Type.Optional(
+        Type.String({ description: 'Which browser: "local" (default) or "crawler" for the container\'s' }),
+      ),
     }),
     async execute(_id, params, _signal, onUpdate) {
       if (!browser) return text("The scratch browser is unavailable: no browser manager was wired up.");
@@ -779,8 +783,9 @@ export function createTools(
           return text("No scratch browser is running. Call btrix_browser with a url to start one.");
         }
         const info = await browser.info();
+        const where = browser.runningKind() === "container" ? ` Watch it at ${browser.vncUrl()}` : "";
         return info.ok
-          ? text(`The scratch browser has ${info.url} open ("${info.title}"). Watch it at ${browser.vncUrl()}`)
+          ? text(`The ${browser.runningKind()} browser has ${info.url} open ("${info.title}").${where}`)
           : text(`The scratch browser is not answering: ${info.error}`);
       }
 
@@ -794,24 +799,40 @@ export function createTools(
         return text("Only http and https urls can be opened.");
       }
 
-      const engine = await engineStatus();
-      if (!engine.usable) return text(engine.problem ?? "No container engine available.");
+      const asked = params.use ? String(params.use).toLowerCase() : "local";
+      if (!["local", "crawler", "container"].includes(asked)) {
+        return text(`"${asked}" is not a browser. Use "local" or "crawler".`);
+      }
+      const kind = asked === "local" ? "local" : "container";
 
-      const opened = await browser.open(url.toString(), (note) =>
+      // Only the container browser needs an engine.
+      if (kind === "container") {
+        const engine = await engineStatus();
+        if (!engine.usable) return text(engine.problem ?? "No container engine available.");
+      }
+
+      const opened = await browser.open(url.toString(), { kind }, (note) =>
         onUpdate?.({ content: [{ type: "text", text: note }], details: {} }),
       );
-      if (!opened.ok) return text(`Could not open the browser: ${opened.error}`);
+      if (!opened.ok) {
+        const alternative =
+          kind === "local"
+            ? ' The crawler\'s own browser is another option: pass use="crawler".'
+            : ' A local browser is another option: pass use="local".';
+        return text(`Could not open the ${kind} browser: ${opened.error}${alternative}`);
+      }
 
+      const watch = opened.vnc ? ` Watch and click it at ${opened.vnc}` : " It is open in a window on your desktop.";
       return {
         content: [
           {
             type: "text",
             text:
-              `Open on ${opened.url} ("${opened.title}"). Watch and click it at ${browser.vncUrl()}\n` +
+              `Open on ${opened.url} ("${opened.title}").${watch}\n` +
               "Use btrix_eval to try selectors and interaction code against this page.",
           },
         ],
-        details: { url: opened.url, title: opened.title, vnc: browser.vncUrl() },
+        details: { url: opened.url, title: opened.title, kind: opened.kind, vnc: opened.vnc },
       };
     },
   });
@@ -822,8 +843,8 @@ export function createTools(
     description:
       "Evaluate a JavaScript expression in the scratch browser's open page and return its value plus anything it " +
       "logged to the console. This is how to work out a behavior: count what a selector matches, click something " +
-      "and count again, read scrollHeight. It runs only in that throwaway container browser, never in the user's " +
-      "own browser and never on their machine.",
+      "and count again, read scrollHeight. It runs only in the throwaway browser btrix_browser opened — a fresh " +
+      "profile with nothing signed in — and never the user's own browsing session.",
     promptSnippet: "Evaluate JavaScript in the scratch browser's page",
     promptGuidelines: [
       "Use btrix_eval to check a selector against the real page before putting it in a behavior.",

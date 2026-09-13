@@ -1,12 +1,13 @@
 /**
- * Talking to the browser inside the crawler container.
+ * Talking to a browser over the DevTools protocol.
  *
- * The container runs a real Chrome with a DevTools endpoint, but Chrome binds
- * it to loopback *inside* the container, so publishing the port gets a
- * connection reset. The way in is to run the client in there too: the image
- * ships Node, and Node has a global WebSocket, so a CDP client needs no
- * dependency on either side.
+ * Two transports, one protocol. A local Chrome answers on localhost, so the
+ * client runs here. The container's Chrome binds its DevTools port to loopback
+ * *inside* the container, so publishing the port gets a connection reset and
+ * the client has to run in there — which works because the image ships Node,
+ * and Node has a global WebSocket.
  *
+ * The same client source serves both: only the command that runs it differs.
  * Each call is a short-lived process that connects, does one thing and exits.
  * A persistent session would save a few hundred milliseconds and cost a lot of
  * state; for a person trying selectors against a page, this is fast enough.
@@ -17,6 +18,11 @@ import { engine } from "./engine.ts";
 
 /** Chrome's DevTools port inside the crawler image. */
 export const CDP_PORT = 9221;
+
+/** Where to find the browser: in a container, or on this machine. */
+export type CdpTarget = { container: string; port?: number } | { port: number };
+
+const targetPort = (t: CdpTarget): number => ("container" in t ? (t.port ?? CDP_PORT) : t.port);
 
 export interface CdpResult {
   ok: boolean;
@@ -105,16 +111,24 @@ try {
  * stdin and the expression as an argument, so nothing has to be escaped into
  * source text.
  */
-async function run(container: string, action: string, payload: string): Promise<CdpResult> {
-  const bin = await engine();
-  if (!bin) return { ok: false, error: "no container engine available", console: [] };
+async function run(target: CdpTarget, action: string, payload: string): Promise<CdpResult> {
+  const args = [String(targetPort(target)), action, payload];
+
+  let command: string;
+  let argv: string[];
+  if ("container" in target) {
+    const bin = await engine();
+    if (!bin) return { ok: false, error: "no container engine available", console: [] };
+    command = bin;
+    argv = ["exec", "-i", target.container, "node", "--input-type=module", "-", ...args];
+  } else {
+    // Local Chrome answers on localhost, so the client runs here.
+    command = process.execPath;
+    argv = ["--input-type=module", "-", ...args];
+  }
 
   return new Promise<CdpResult>((resolve) => {
-    const child = spawn(
-      bin,
-      ["exec", "-i", container, "node", "--input-type=module", "-", String(CDP_PORT), action, payload],
-      { stdio: ["pipe", "pipe", "pipe"] },
-    );
+    const child = spawn(command, argv, { stdio: ["pipe", "pipe", "pipe"] });
 
     let stdout = "";
     let stderr = "";
@@ -152,16 +166,16 @@ async function run(container: string, action: string, payload: string): Promise<
 }
 
 /** Evaluate an expression in the open page. */
-export function evaluate(container: string, expression: string): Promise<CdpResult> {
-  return run(container, "eval", expression);
+export function evaluate(target: CdpTarget, expression: string): Promise<CdpResult> {
+  return run(target, "eval", expression);
 }
 
 /** Point the browser at a url and wait for it to settle. */
-export function navigate(container: string, url: string): Promise<CdpResult> {
-  return run(container, "navigate", url);
+export function navigate(target: CdpTarget, url: string): Promise<CdpResult> {
+  return run(target, "navigate", url);
 }
 
 /** What the browser currently has open. */
-export function pageInfo(container: string): Promise<CdpResult> {
-  return run(container, "info", "");
+export function pageInfo(target: CdpTarget): Promise<CdpResult> {
+  return run(target, "info", "");
 }

@@ -119,9 +119,8 @@ logged-in crawl comes back full of login pages, make the profile again.
 ## Writing a custom behavior
 
 Sites whose content appears only after a click — "Load More", infinite scroll,
-expandable sections — need a custom behavior. btrix opens a real Chrome on the
-page, which you can watch and click at `localhost:6080`, and evaluates
-expressions against it:
+expandable sections — need a custom behavior. btrix opens a real browser on the
+page and evaluates expressions against it:
 
 ```
 document.querySelectorAll('.load-more').length   => 1
@@ -134,6 +133,12 @@ That answers what a behavior needs to know: whether the control exists, what it
 matches, and how many items a click adds. Put the result in
 `btrix/config/behaviors/`, reference it from the config with `customBehaviors`,
 and check it with a small crawl.
+
+By default this is a local Chrome in a window on your desktop, so F12 gives you
+real DevTools. Ask for the crawler's own browser instead — watched over noVNC
+at `localhost:6080` — when a selector works locally but the crawl still misses
+pages. Both use a throwaway profile with nothing signed in; neither is the
+browser you browse with, which Chrome would refuse to expose anyway.
 
 ## Develop
 

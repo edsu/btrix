@@ -126,7 +126,7 @@ export default function (pi: ExtensionAPI) {
   const servers = new ReplayServers();
   // Same lifecycle reasoning as the replay servers: a crawl is detached because
   // it should outlive the session, a stray Chrome should not.
-  const browser = new ScratchBrowser();
+  const browser = new ScratchBrowser(() => store.chromeProfileDir);
 
   for (const tool of createTools(
     monitor,
@@ -347,7 +347,8 @@ export default function (pi: ExtensionAPI) {
     const bits: string[] = [];
     const live = servers.running();
     if (live.length) bits.push(`replay :${live.map((s) => s.port).join(",")}`);
-    if (browser.isRunning()) bits.push(`browser :${VNC_PORT}`);
+    if (browser.runningKind() === "container") bits.push(`browser :${VNC_PORT}`);
+    else if (browser.isRunning()) bits.push("browser (local)");
     ctx.ui.setStatus("btrix-replay", bits.length ? ctx.ui.theme.fg("dim", bits.join(" · ")) : undefined);
     return undefined;
   });

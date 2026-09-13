@@ -27,7 +27,7 @@ beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "btrix-browser-"));
   store = ensureStore(resolveStore({ cwd: dir, env: {} }));
   monitor = new CrawlMonitor();
-  browser = new ScratchBrowser();
+  browser = new ScratchBrowser(() => store.chromeProfileDir);
   tools = createTools(monitor, () => store, () => undefined, undefined, browser);
 });
 afterEach(() => {
@@ -104,10 +104,32 @@ describe("btrix_eval guards", () => {
 });
 
 describe("tool descriptions", () => {
-  it("say plainly that this is not the user's own browser", () => {
-    // The model should never think it is driving the user's Chrome.
+  it("say plainly that this is never the user's own browsing session", () => {
+    // The model must not think it is driving the browser the user lives in.
     for (const name of ["btrix_browser", "btrix_eval"]) {
-      expect(tool(name).description).toMatch(/not the user's own browser|never in the user's\s+own browser/);
+      const d = tool(name).description.replace(/\s+/g, " ");
+      expect(d).toMatch(/never the user's own|not the user's own/);
     }
+  });
+
+  it("say which browser is the default, and that the other exists", () => {
+    const d = tool("btrix_browser").description.replace(/\s+/g, " ");
+    expect(d).toContain("Defaults to a local Chrome");
+    expect(d).toContain("crawler");
+    // A fresh profile either way, which is the security-relevant part.
+    expect(d).toContain("fresh profile");
+  });
+});
+
+describe("browser kinds", () => {
+  it("refuses a browser it does not have", async () => {
+    expect(said(await run("btrix_browser", { url: "https://example.org/", use: "firefox" }))).toContain(
+      'is not a browser',
+    );
+    expect(browser.isRunning()).toBe(false);
+  });
+
+  it("reports nothing running before anything starts", () => {
+    expect(browser.runningKind()).toBeUndefined();
   });
 });
