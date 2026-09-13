@@ -54,6 +54,7 @@ function stubCtx(overrides: Record<string, unknown> = {}) {
       setTitle: vi.fn(),
       setWidget: vi.fn(),
       setStatus: vi.fn(),
+      setHeader: vi.fn(),
       addAutocompleteProvider: vi.fn(),
       notify: vi.fn(),
       confirm: vi.fn().mockResolvedValue(true),

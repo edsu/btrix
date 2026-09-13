@@ -17,8 +17,9 @@ import { finishRun, type Outcome } from "./src/finish.ts";
 import { ScratchBrowser, VNC_PORT } from "./src/browser.ts";
 import { CrawlMonitor, type WatchTarget } from "./src/monitor.ts";
 import { notifyDesktop } from "./src/notify.ts";
-import { renderForModel, renderInventory, renderWidget, startupLines } from "./src/render.ts";
+import { renderForModel, renderInventory, renderWidget, startupLines, supportsUnicode } from "./src/render.ts";
 import { listArchiveFiles, ReplayServers } from "./src/serve.ts";
+import { linesComponent } from "./src/tui.ts";
 import { humanBytes } from "./src/sizes.ts";
 import type { CrawlStats } from "./src/stats.ts";
 import { activeRun, collectionFor, legacyRoot, resolveStore, type Store } from "./src/store.ts";
@@ -302,14 +303,21 @@ export default function (pi: ExtensionAPI) {
     if (ctx.hasUI && auth.ready) {
       showModel(ctx, modelLabel(auth.model));
 
-      // Orient the user in three lines, without spending a turn on it. The
-      // engine check is the important one: finding out that Docker is absent
-      // or asleep here beats finding out several minutes into an image pull.
+      // Replace the harness's banner with ours. The engine check is the
+      // important part: finding out that Docker is absent or asleep here beats
+      // finding out several minutes into an image pull.
       const [engine, inv] = await Promise.all([engineStatus(), buildInventory(store, legacy)]);
-      ctx.ui.setWidget(
-        "btrix:startup",
-        startupLines({ inv, engine, model: readyHeader(auth, store.root)[1], adopted: adopted.map((t) => t.config) }, ctx.ui.theme),
+      const banner = startupLines(
+        {
+          inv,
+          engine,
+          model: readyHeader(auth, store.root)[1],
+          adopted: adopted.map((t) => t.config),
+          unicode: supportsUnicode(),
+        },
+        ctx.ui.theme,
       );
+      ctx.ui.setHeader(() => linesComponent(banner));
     }
   });
 
@@ -320,9 +328,6 @@ export default function (pi: ExtensionAPI) {
     if (ctx.hasUI && probeAuth(ctx.modelRegistry as never).ready) {
       ctx.ui.setWidget("btrix:firstrun", undefined);
     }
-    // The startup summary has done its job once work begins; the rows are
-    // better spent on the transcript.
-    ctx.ui.setWidget("btrix:startup", undefined);
     return undefined;
   });
 
@@ -369,7 +374,6 @@ export default function (pi: ExtensionAPI) {
     for (const target of monitor.watched()) ctxRef?.ui.setWidget(widgetKey(target.config), undefined);
     ctxRef?.ui.setWidget("btrix:inventory", undefined);
     ctxRef?.ui.setWidget("btrix:firstrun", undefined);
-    ctxRef?.ui.setWidget("btrix:startup", undefined);
     ctxRef?.ui.setStatus("btrix-replay", undefined);
     ctxRef?.ui.setStatus("btrix", undefined);
     ctxRef?.ui.setTitle("pi");

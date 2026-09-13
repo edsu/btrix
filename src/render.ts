@@ -364,62 +364,221 @@ export interface StartupInfo {
   engine: { usable: boolean; bin?: string; problem?: string };
   model?: string;
   adopted: string[];
+  /** Whether box-drawing characters will render. Defaults to assuming yes. */
+  unicode?: boolean;
+}
+
+/** "1 archive" / "2 archives", rather than "1 archive(s)". */
+function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** Visible width, ignoring colour sequences. */
+function visible(s: string): number {
+  return s.replace(/\u001b\[[0-9;]*m/g, "").length;
+}
+
+
+/**
+ * Pages being crawled, and coming to rest as an archive.
+ *
+ * Box-drawing characters are near-universal now, but institutional terminals
+ * are not always set to a UTF-8 locale, and a banner of replacement characters
+ * is a poor first impression — so there is a plain fallback.
+ */
+const ART_WIDTH = 24;
+
+function artLines(theme: ThemeLike, unicode: boolean): string[] {
+  const page = (t: string) => theme.fg("accent", t);
+  const dim = (t: string) => theme.fg("dim", t);
+  if (!unicode) {
+    return [
+      dim("  .--.  .--.  .--."),
+      `  ${page("|##|")}${dim("->")}${page("|##|")}${dim("->")}${page("|##|")}`,
+      dim("  '--'  '--'  '--'"),
+      dim("      \\  |  /"),
+      `      ${page(".-------.")}`,
+      `      ${page("| .wacz |")}`,
+      `      ${page("'-------'")}`,
+    ];
+  }
+  return [
+    dim("  ╭──╮  ╭──╮  ╭──╮"),
+    `  ${page("│▒▒│")}${dim("→")}${page("│▒▒│")}${dim("→")}${page("│▒▒│")}`,
+    dim("  ╰──╯  ╰──╯  ╰──╯"),
+    dim("      ╲   │   ╱"),
+    `      ${page("╭───────╮")}`,
+    `      ${page("│ .wacz │")}`,
+    `      ${page("╰───────╯")}`,
+  ];
+}
+
+/** Whether the terminal is likely to render box-drawing characters. */
+export function supportsUnicode(env: Record<string, string | undefined> = process.env): boolean {
+  const locale = `${env.LC_ALL ?? ""}${env.LC_CTYPE ?? ""}${env.LANG ?? ""}`;
+  return /utf-?8/i.test(locale) || env.TERM_PROGRAM === "vscode" || env.WT_SESSION !== undefined;
 }
 
 /**
- * What is worth saying before the user has asked anything.
+ * One row per crawl, for the startup banner: what is here and where each thing
+ * got to. A condensed form of the inventory — enough to see at a glance, with
+ * `/btrix` for the whole table.
+ */
+export function overviewLines(inv: Inventory, theme: ThemeLike = plainTheme, limit = 5): string[] {
+  const dim = (t: string) => theme.fg("dim", t);
+
+  interface Row {
+    name: string;
+    state: string;
+    colour: string;
+    counts: string;
+    size: string;
+    rank: number;
+  }
+
+  const rows: Row[] = inv.configs.map((c) => {
+    const run = inv.runs.find((r) => r.config === c.name);
+    const archive = inv.archives.find((a) => a.collection === c.collection);
+    const live = inv.running.includes(c.name);
+    const s = run?.stats;
+
+    const state = live ? "crawling" : s ? STATE_LABEL[s.state] : archive ? "done" : "never run";
+    const colour = live ? "accent" : state === "done" ? "success" : state === "never run" ? "dim" : "warning";
+    const pages = archive?.provenance?.pages;
+    return {
+      name: c.collection === c.name ? c.name : `${c.name} → ${c.collection}`,
+      state,
+      colour,
+      counts: s?.total ? `${s.crawled}/${s.total}` : pages?.total ? `${pages.crawled}/${pages.total}` : "",
+      size: archive ? humanBytes(archive.bytes) : "",
+      // Live crawls first, then finished archives, then runs that ended
+      // without one — a stopped crawl with partial output is more interesting
+      // than a config nobody has run yet.
+      rank: live ? 0 : archive ? 1 : s ? 2 : 3,
+    };
+  });
+
+  // An archive whose config is gone still belongs in the picture.
+  for (const a of inv.archives) {
+    if (inv.configs.some((c) => c.collection === a.collection)) continue;
+    rows.push({
+      name: a.collection,
+      state: "no config",
+      colour: "warning",
+      counts: a.provenance?.pages?.total ? `${a.provenance.pages.crawled}/${a.provenance.pages.total}` : "",
+      size: humanBytes(a.bytes),
+      rank: 1,
+    });
+  }
+
+  if (!rows.length) return [];
+  rows.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+
+  const shown = rows.slice(0, limit);
+  const width = Math.min(34, Math.max(...shown.map((r) => r.name.length)));
+  const out = shown.map((r) => {
+    const row =
+      `  ${theme.fg("text", r.name.padEnd(width))}  ${theme.fg(r.colour, r.state.padEnd(10))} ` +
+      `${dim(r.counts.padStart(8))}  ${dim(r.size)}`;
+    // Trim the whole row: the state column pads too, so trimming only the tail
+    // fragment leaves its padding behind.
+    return row.replace(/\s+$/, "");
+  });
+  if (rows.length > shown.length) {
+    out.push("  " + dim(`+${rows.length - shown.length} more — /btrix for the full inventory`));
+  }
+  return out;
+}
+
+/** What to suggest doing next, from what is actually in the store. */
+export function nextStepHint(inv: Inventory, adopted: string[]): string {
+  if (adopted.length) return `${adopted.join(", ")} is still crawling — watch the progress below.`;
+  const ready = inv.neverRun[0];
+  if (ready) return `Ready to crawl: say "crawl ${ready}".`;
+  const archive = inv.archives[0]?.collection;
+  if (archive) return `Say "replay ${archive}" to look at an archive, or name another site to capture.`;
+  return 'Tell me a site to archive — for example, "archive the news section of library.stanford.edu".';
+}
+
+/**
+ * The startup banner, replacing the harness's own.
  *
- * Chosen by "would this change what you do next": where the store is, whether
- * a crawl is already running, whether the container engine will actually work,
- * and anything that is quietly costing disk. Deliberately short — every row
- * here is a row of transcript the user does not get.
+ * The default one advertises the harness — its logo, its keybindings, and an
+ * invitation to ask it about itself — none of which a person who installed a
+ * web archiving tool has any use for.
+ *
+ * What goes here instead is chosen by "would this change what you do next":
+ * where the store is, whether a crawl is already running, whether the container
+ * engine will actually work, and anything quietly costing disk. Kept short.
  */
 export function startupLines(info: StartupInfo, theme: ThemeLike = plainTheme): string[] {
   const dim = (t: string) => theme.fg("dim", t);
   const sep = dim(" · ");
   const { inv } = info;
 
-  const head = [theme.fg("accent", "btrix"), dim(inv.store.root)];
+  const head = [dim(inv.store.root)];
   if (inv.free !== undefined) head.push(dim(`${humanBytes(inv.free)} free`));
-  // The model is worth naming, and worth saying is changeable: a btrix user
-  // has no reason to know that /model exists.
-  if (info.model) head.push(dim(`${info.model.replace(/^store .*? · /, "")} (/model to change)`));
+  if (info.model) head.push(dim(info.model.replace(/^store .*? · /, "")));
 
   const empty = !inv.configs.length && !inv.archives.length;
   const facts: string[] = [];
   // "0 configs" adds nothing next to the invitation below.
-  if (!empty) facts.push(dim(`${inv.configs.length} config${inv.configs.length === 1 ? "" : "s"}`));
+  if (!empty) facts.push(dim(plural(inv.configs.length, "config")));
   if (inv.archives.length) {
     const bytes = inv.archives.reduce((n, a) => n + (a.bytes ?? 0), 0);
-    facts.push(dim(`${inv.archives.length} archive${inv.archives.length === 1 ? "" : "s"} ${humanBytes(bytes)}`));
+    facts.push(dim(`${plural(inv.archives.length, "archive")} ${humanBytes(bytes)}`));
   }
-  if (inv.profiles.length) facts.push(dim(`${inv.profiles.length} login profile(s)`));
+  if (inv.profiles.length) facts.push(dim(plural(inv.profiles.length, "login profile")));
 
-  const lines = [head.join(sep)];
-  if (facts.length) lines.push("  " + facts.join(sep));
+  // The art carries the greeting beside it, so the banner reads as a welcome
+  // rather than a status dump.
+  const beside = [
+    "",
+    theme.fg("accent", "btrix") + dim("  ·  high-fidelity web archives"),
+    dim("Browsertrix Crawler, driven by conversation"),
+    "",
+    head.join(sep),
+    facts.length ? facts.join(sep) : "",
+    "",
+  ];
+  const art = artLines(theme, info.unicode ?? true);
+  const pad = (a: string) => a + " ".repeat(Math.max(2, ART_WIDTH - visible(a)));
+  const lines = art.map((a, i) => (beside[i] ? pad(a) + beside[i] : a));
 
-  // A crawl still going from an earlier session is the most useful thing to
-  // know, so it gets its own line rather than a footnote.
-  if (info.adopted.length) {
-    lines.push("  " + theme.fg("accent", `still crawling: ${info.adopted.join(", ")} — progress below`));
+  const overview = overviewLines(inv, theme);
+  if (overview.length) {
+    lines.push("");
+    lines.push(...overview);
   }
 
   const warnings: string[] = [];
   if (!info.engine.usable && info.engine.problem) warnings.push(info.engine.problem);
   if (inv.failed.count) {
     warnings.push(
-      `${inv.failed.count} failed run(s) holding ${humanBytes(inv.failed.bytes)} — ask me to clear them`,
+      `${plural(inv.failed.count, "failed run")} holding ${humanBytes(inv.failed.bytes)} — ask me to clear them`,
     );
   }
   if (inv.free !== undefined && inv.free < 5 * 1024 ** 3) {
     warnings.push("less than 5G free; the crawler aborts outright when the disk fills mid-crawl");
   }
-  if (inv.orphans.length) warnings.push(`no matching config: ${inv.orphans.join(", ")}`);
   for (const w of warnings) lines.push("  " + theme.fg(info.engine.usable ? "warning" : "error", `⚠ ${w}`));
 
-  if (empty && info.engine.usable) {
-    lines.push("  " + dim("nothing here yet — tell me a site to archive and I will set it up"));
+  lines.push("");
+  if (info.engine.usable) {
+    lines.push("  " + theme.fg("text", nextStepHint(inv, info.adopted)));
   }
+
+  // Only btrix's own affordances, and `/help` for the rest: listing keys that
+  // the harness lets people rebind would be inventing an answer.
+  lines.push(
+    "  " +
+      [
+        dim("/btrix for the inventory"),
+        dim("@ completes names"),
+        dim("/model changes model"),
+        dim("/help for keys"),
+      ].join(sep),
+  );
   return lines;
 }
 

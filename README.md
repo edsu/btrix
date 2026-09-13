@@ -1,9 +1,10 @@
 # btrix
 
-Make high-fidelity web archives with
-[Browsertrix Crawler](https://github.com/webrecorder/browsertrix-crawler), by
-describing what you want archived. Crawls run locally in a container and
-produce WACZ files you can replay in [ReplayWeb.page](https://replayweb.page).
+Make high-fidelity web archives with [Browsertrix
+Crawler](https://github.com/webrecorder/browsertrix-crawler), by chatting with
+your favorite LLM, and describing what you want archived. Crawls run locally in
+a container and produce WACZ files you can replay in
+[ReplayWeb.page](https://replayweb.page).
 
 ## Install
 
@@ -24,7 +25,26 @@ dependency. If you already use pi, load btrix as an extension instead with
 
 ## Use
 
-`cd` to a working directory and say what you want.
+`cd` to a working directory and run `btrix`. It opens with what is in the store
+and what to do next:
+
+```
+  ╭──╮  ╭──╮  ╭──╮
+  │▒▒│→│▒▒│→│▒▒│        btrix  ·  high-fidelity web archives
+  ╰──╯  ╰──╯  ╰──╯      Browsertrix Crawler, driven by conversation
+      ╲   │   ╱
+      ╭───────╮         ./btrix · 39G free · anthropic/claude-opus-5
+      │ .wacz │         3 configs · 2 archives 41M · 1 login profile
+      ╰───────╯
+
+  cultprotest              crawling      12/30
+  sulnews → stanford-news  done          25/25  40M
+  toi                      stopped       18/25
+
+  cultprotest is still crawling — watch the progress below.
+```
+
+Then say what you want.
 
 | You say | What happens |
 |---|---|

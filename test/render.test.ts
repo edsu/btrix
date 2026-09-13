@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { plainTheme, renderForModel, renderWidget, startupLines } from "../src/render.ts";
+import {
+  nextStepHint,
+  overviewLines,
+  plainTheme,
+  renderForModel,
+  renderWidget,
+  startupLines,
+  supportsUnicode,
+} from "../src/render.ts";
 import type { CrawlStats } from "../src/stats.ts";
 import { humanBytes, humanDuration } from "../src/sizes.ts";
 
@@ -121,7 +129,7 @@ describe("formatting", () => {
 describe("startupLines", () => {
   const inv = (over: Record<string, any> = {}): any => ({
     store: { root: "/w/btrix" },
-    configs: [{ name: "sulnews", collection: "stanford-news", behaviors: [], generateWacz: true, textToPages: true, path: "", }],
+    configs: [{ name: "sulnews", collection: "stanford-news", behaviors: [], generateWacz: true, textToPages: true, path: "" }],
     runs: [],
     archives: [],
     failed: { count: 0 },
@@ -129,26 +137,46 @@ describe("startupLines", () => {
     free: 39 * 1024 ** 3,
     running: [],
     legacyCollections: [],
-    neverRun: [],
+    neverRun: ["sulnews"],
     orphans: [],
     ...over,
   });
+  const banner = (over: Record<string, any> = {}, invOver: Record<string, any> = {}) =>
+    startupLines({ inv: inv(invOver), engine: { usable: true }, adopted: [], ...over }, plainTheme).join("\n");
 
-  it("orients in a couple of lines: where, how much room, what is here", () => {
-    const out = startupLines({ inv: inv(), engine: { usable: true, bin: "docker" }, adopted: [] }, plainTheme).join("\n");
+  it("greets, and says what this is", () => {
+    const out = banner({ model: "store /w/btrix · anthropic/claude-opus-5" });
+    expect(out).toContain("btrix");
+    expect(out).toContain("high-fidelity web archives");
+    expect(out).toContain("Browsertrix Crawler");
+    // Nothing about the harness it happens to be built on.
+    expect(out.toLowerCase()).not.toMatch(/\bpi\b/);
+  });
+
+  it("says where things are and what is here", () => {
+    const out = banner({ model: "store /w/btrix · anthropic/claude-opus-5" });
     expect(out).toContain("/w/btrix");
     expect(out).toContain("39G free");
+    expect(out).toContain("anthropic/claude-opus-5");
     expect(out).toContain("1 config");
   });
 
-  it("names the model and says it can be changed", () => {
-    // A btrix user has no reason to know /model exists.
-    const out = startupLines(
-      { inv: inv(), engine: { usable: true }, model: "store /w/btrix · anthropic/claude-opus-5", adopted: [] },
-      plainTheme,
-    ).join("\n");
-    expect(out).toContain("anthropic/claude-opus-5");
-    expect(out).toContain("/model to change");
+  it("pluralises properly", () => {
+    const one = banner({}, { archives: [{ collection: "a", kind: "wacz", bytes: 1024, path: "" }], profiles: [{ name: "p" }] });
+    expect(one).toContain("1 archive");
+    expect(one).toContain("1 login profile");
+    expect(one).not.toContain("(s)");
+
+    const two = banner(
+      {},
+      {
+        archives: [
+          { collection: "a", kind: "wacz", bytes: 1024, path: "" },
+          { collection: "b", kind: "wacz", bytes: 1024, path: "" },
+        ],
+      },
+    );
+    expect(two).toContain("2 archives");
   });
 
   it("leads with a missing container engine, since nothing works without one", () => {
@@ -156,32 +184,153 @@ describe("startupLines", () => {
       { inv: inv(), engine: { usable: false, problem: "No docker or podman found." }, adopted: [] },
       plainTheme,
     ).join("\n");
-    // Better here than several minutes into an image pull.
     expect(out).toContain("No docker or podman found.");
-  });
-
-  it("calls out a crawl still running from an earlier session", () => {
-    const out = startupLines({ inv: inv(), engine: { usable: true }, adopted: ["sulnews"] }, plainTheme).join("\n");
-    expect(out).toContain("still crawling: sulnews");
+    // With no engine there is no point suggesting a crawl.
+    expect(out).not.toContain("Ready to crawl");
   });
 
   it("mentions space quietly held by failed runs, and low disk", () => {
-    const out = startupLines(
-      { inv: inv({ failed: { count: 3, bytes: 2.1 * 1024 ** 3 }, free: 2 * 1024 ** 3 }), engine: { usable: true }, adopted: [] },
-      plainTheme,
-    ).join("\n");
-    expect(out).toContain("3 failed run(s) holding 2.1G");
+    const out = banner({}, { failed: { count: 3, bytes: 2.1 * 1024 ** 3 }, free: 2 * 1024 ** 3 });
+    expect(out).toContain("3 failed runs holding 2.1G");
     expect(out).toContain("less than 5G free");
   });
 
-  it("invites a first crawl when the store is empty", () => {
-    const out = startupLines({ inv: inv({ configs: [] }), engine: { usable: true }, adopted: [] }, plainTheme).join("\n");
-    expect(out).toContain("nothing here yet");
+  it("falls back to plain characters when the locale is not utf-8", () => {
+    // A banner of replacement characters is a poor first impression.
+    expect(banner({ unicode: true })).toContain("╭──╮");
+    const plain = banner({ unicode: false });
+    expect(plain).not.toContain("╭");
+    expect(plain).toContain(".--.");
+    expect(plain).toContain("| .wacz |");
   });
 
-  it("stays short", () => {
-    // Every line here is a line of transcript the user does not get.
+  it("stays short enough to read", () => {
     const out = startupLines({ inv: inv(), engine: { usable: true }, adopted: [] }, plainTheme);
-    expect(out.length).toBeLessThanOrEqual(3);
+    expect(out.length).toBeLessThanOrEqual(14);
+  });
+});
+
+describe("overviewLines", () => {
+  const cfg = (name: string, collection = name) => ({
+    name,
+    collection,
+    behaviors: [],
+    generateWacz: true,
+    textToPages: true,
+    path: "",
+  });
+  const inv = (over: Record<string, any> = {}): any => ({
+    store: { root: "/w/btrix" },
+    configs: [],
+    runs: [],
+    archives: [],
+    failed: { count: 0 },
+    profiles: [],
+    running: [],
+    legacyCollections: [],
+    neverRun: [],
+    orphans: [],
+    ...over,
+  });
+
+  it("says nothing at all for an empty store", () => {
+    expect(overviewLines(inv(), plainTheme)).toEqual([]);
+  });
+
+  it("shows one row per crawl, with state, counts and size", () => {
+    const out = overviewLines(
+      inv({
+        configs: [cfg("sulnews", "stanford-news")],
+        archives: [
+          {
+            collection: "stanford-news",
+            kind: "wacz",
+            bytes: 40 * 1024 ** 2,
+            path: "",
+            provenance: { pages: { crawled: 25, total: 25 } },
+          },
+        ],
+      }),
+      plainTheme,
+    ).join("\n");
+    // Both names, since a config and its collection can differ.
+    expect(out).toContain("sulnews → stanford-news");
+    expect(out).toContain("done");
+    expect(out).toContain("25/25");
+    expect(out).toContain("40M");
+  });
+
+  it("orders by what you most likely want to see", () => {
+    const rows = overviewLines(
+      inv({
+        configs: [cfg("live"), cfg("archived"), cfg("halted"), cfg("fresh")],
+        running: ["live"],
+        runs: [
+          { config: "live", collection: "live", root: "", stats: { crawled: 1, total: 9, state: "crawling" } },
+          { config: "halted", collection: "halted", root: "", stats: { crawled: 4, total: 9, state: "stopped" } },
+        ],
+        archives: [{ collection: "archived", kind: "wacz", bytes: 10, path: "" }],
+        neverRun: ["fresh"],
+      }),
+      plainTheme,
+    ).map((l) => l.trim().split(/\s+/)[0]);
+    // Running, then finished, then ended without an archive, then not yet run.
+    expect(rows).toEqual(["live", "archived", "halted", "fresh"]);
+  });
+
+  it("includes an archive whose config has gone", () => {
+    const out = overviewLines(
+      inv({ archives: [{ collection: "renamed", kind: "wacz", bytes: 1024, path: "" }] }),
+      plainTheme,
+    ).join("\n");
+    expect(out).toContain("renamed");
+    expect(out).toContain("no config");
+  });
+
+  it("caps the list and says how much it left out", () => {
+    const out = overviewLines(inv({ configs: Array.from({ length: 9 }, (_, i) => cfg(`c${i}`)) }), plainTheme, 3);
+    expect(out).toHaveLength(4);
+    expect(out[3]).toContain("+6 more");
+    expect(out[3]).toContain("/btrix");
+  });
+
+  it("leaves no trailing whitespace on a sparse row", () => {
+    const out = overviewLines(inv({ configs: [cfg("fresh")], neverRun: ["fresh"] }), plainTheme);
+    for (const line of out) expect(line).toBe(line.replace(/\s+$/, ""));
+  });
+});
+
+describe("nextStepHint", () => {
+  const base: any = { archives: [], neverRun: [], store: { root: "." } };
+
+  it("invites a first crawl when there is nothing at all", () => {
+    expect(nextStepHint(base, [])).toContain("Tell me a site to archive");
+  });
+
+  it("names a config that is ready to run", () => {
+    expect(nextStepHint({ ...base, neverRun: ["sulnews"] }, [])).toContain('say "crawl sulnews"');
+  });
+
+  it("points at an archive once one exists", () => {
+    expect(nextStepHint({ ...base, archives: [{ collection: "stanford-news" }] }, [])).toContain(
+      'Say "replay stanford-news"',
+    );
+  });
+
+  it("prefers telling you about a crawl in flight", () => {
+    expect(nextStepHint({ ...base, neverRun: ["other"] }, ["sulnews"])).toContain("sulnews is still crawling");
+  });
+});
+
+describe("supportsUnicode", () => {
+  it("trusts a utf-8 locale and known terminals", () => {
+    expect(supportsUnicode({ LANG: "en_US.UTF-8" })).toBe(true);
+    expect(supportsUnicode({ LC_ALL: "C.utf8" })).toBe(true);
+    expect(supportsUnicode({ TERM_PROGRAM: "vscode" })).toBe(true);
+  });
+
+  it("does not assume it otherwise", () => {
+    expect(supportsUnicode({ LANG: "C" })).toBe(false);
+    expect(supportsUnicode({})).toBe(false);
   });
 });
