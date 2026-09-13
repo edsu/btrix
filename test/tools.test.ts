@@ -131,3 +131,63 @@ describe("btrix_status guards", () => {
     expect(result.details.config).toBe("sulnews");
   });
 });
+
+describe("btrix_review", () => {
+  const HEADER = `{"format":"json-pages-1.0","id":"pages","title":"Seed Pages","hasText":"true"}`;
+  const page = (over: Record<string, unknown> = {}) =>
+    JSON.stringify({ url: "https://x.test/", title: "Home", status: 200, mime: "text/html", loadState: 4, seed: true, text: "a".repeat(3000), ...over });
+
+  it("reviews a run's page index in place", async () => {
+    writeConfig("sulnews", "collection: stanford-news\ngenerateWACZ: true\n");
+    const coll = path.join(store.runsDir, "sulnews-20260913T100000", "collections", "stanford-news");
+    fs.mkdirSync(path.join(coll, "pages"), { recursive: true });
+    fs.writeFileSync(path.join(coll, "pages", "pages.jsonl"), [HEADER, page(), page({ url: "https://x.test/b", status: 404 })].join("\n"));
+
+    const result: any = await run(tool("btrix_review"), { name: "sulnews" });
+    const out = said(result);
+    expect(out).toContain("2 pages captured");
+    expect(out).toContain("404 https://x.test/b");
+    expect(result.details.report.total).toBe(2);
+  });
+
+  it("does not call a finished crawl partial, or name internal state", async () => {
+    writeConfig("sulnews", "collection: stanford-news\ngenerateWACZ: true\n");
+    const coll = path.join(store.runsDir, "sulnews-20260913T100000", "collections", "stanford-news");
+    fs.mkdirSync(path.join(coll, "pages"), { recursive: true });
+    fs.mkdirSync(path.join(coll, "logs"), { recursive: true });
+    fs.writeFileSync(path.join(coll, "pages", "pages.jsonl"), [HEADER, page()].join("\n"));
+    // No wacz and no container, so nothing is running: the review is of
+    // whatever was captured, and must not claim to be partial.
+    const out = said(await run(tool("btrix_review"), { name: "sulnews" }));
+    expect(out).not.toContain("still running");
+    // And it must never surface an internal state name to the user.
+    expect(out).not.toContain("no-stats");
+  });
+
+  it("falls back to the summary stored with the archive", async () => {
+    writeConfig("sulnews", "collection: stanford-news\ngenerateWACZ: true\n");
+    fs.writeFileSync(path.join(store.outDir, "stanford-news.wacz"), Buffer.alloc(32));
+    fs.writeFileSync(
+      path.join(store.outDir, "stanford-news.btrix.json"),
+      JSON.stringify({ config: "sulnews.yaml", review: { seedPages: 5, extraPages: 2, total: 7, hasText: true, medianTextLength: 900, hosts: [], offHost: [], statuses: [], notOk: [], mimes: [], repeatedTitles: [], thinPages: [], emptyText: 0, partialLoads: [], truncated: false } }),
+    );
+    const result: any = await run(tool("btrix_review"), { name: "stanford-news" });
+    expect(said(result)).toContain("7 pages captured");
+    expect(result.details.fromSidecar).toBe(true);
+  });
+
+  it("says plainly when there is nothing left to review", async () => {
+    writeConfig("sulnews", "collection: stanford-news\ngenerateWACZ: true\n");
+    fs.writeFileSync(path.join(store.outDir, "stanford-news.wacz"), Buffer.alloc(32));
+    const out = said(await run(tool("btrix_review"), { name: "stanford-news" }));
+    expect(out).toContain("no page index is available");
+    expect(out).toContain("btrix_view");
+  });
+
+  it("asks which crawl when there are several", async () => {
+    writeConfig("a", "collection: a\n");
+    writeConfig("b", "collection: b\n");
+    for (const n of ["a", "b"]) fs.writeFileSync(path.join(store.outDir, `${n}.wacz`), Buffer.alloc(8));
+    expect(said(await run(tool("btrix_review"), {}))).toContain("Several crawls");
+  });
+});

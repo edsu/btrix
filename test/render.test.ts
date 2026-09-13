@@ -57,7 +57,9 @@ describe("renderWidget", () => {
     expect(out).not.toContain("/min");
     expect(renderForModel(dead)).not.toContain("pages/min");
     // And no disk ETA either, since nothing is filling it.
-    expect(renderWidget(stats({ state: "stopped", diskFullIn: 120_000 }), plainTheme).join("\n")).not.toContain("full in");
+    expect(
+      renderWidget(stats({ state: "stopped", containerRunning: false, diskFullIn: 120_000 }), plainTheme).join("\n"),
+    ).not.toContain("full in");
   });
 
   it("shows both names when the collection differs from the config", () => {
@@ -70,7 +72,9 @@ describe("renderWidget", () => {
 
   it("drops the screencast hint once the crawl is not running", () => {
     expect(renderWidget(stats(), plainTheme).join("\n")).toContain("screencast :9037");
-    expect(renderWidget(stats({ state: "done" }), plainTheme).join("\n")).not.toContain("screencast");
+    expect(renderWidget(stats({ state: "done", containerRunning: false }), plainTheme).join("\n")).not.toContain(
+      "screencast",
+    );
   });
 });
 

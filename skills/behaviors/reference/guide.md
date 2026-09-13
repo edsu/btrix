@@ -349,7 +349,7 @@ These answer two *different* questions:
   ArchiveWeb.page, suspect the app (version, incomplete import, or a stray
   live-network fallback) — not your archive.
 - Large WACZ + a hosted replayer: serve the file locally over HTTP with **range
-  requests + CORS** using [`../scripts/waczserve.py`](../scripts/waczserve.py)
+  requests + CORS** using `btrix_view`, or `node <btrix>/src/serve.ts <dir> [port]`
   (ReplayWeb.page reads the ZIP index via `Range: bytes=-N` suffix requests, so
   the server must honor those), then load it via
   `?source=http://localhost:PORT/foo.wacz`.

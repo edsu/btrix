@@ -8,6 +8,7 @@
  */
 
 import type { Inventory } from "./inventory.ts";
+import type { PagesReport } from "./pages.ts";
 import { nextStep } from "./inventory.ts";
 import { humanBytes, humanDuration } from "./sizes.ts";
 import type { CrawlStats } from "./stats.ts";
@@ -41,9 +42,14 @@ const STATE_COLOR: Record<CrawlStats["state"], string> = {
   stopped: "warning",
 };
 
-/** Rates only mean something while something is actually running. */
-function isLive(s: CrawlStats): boolean {
-  return s.state === "crawling" || s.state === "post-crawl" || s.state === "generating-wacz";
+/**
+ * Whether work is still happening. Rates only mean something while it is, and
+ * a review of a live crawl is a review of a partial capture.
+ */
+export function isLive(s: CrawlStats): boolean {
+  return (
+    s.containerRunning || s.state === "crawling" || s.state === "post-crawl" || s.state === "generating-wacz"
+  );
 }
 
 /**
@@ -267,4 +273,84 @@ export function inventoryForModel(inv: Inventory): string {
   }
   if (inv.orphans.length) parts.push(`no matching config: ${inv.orphans.join(", ")}`);
   return parts.join(" · ");
+}
+
+// ---------------------------------------------------------------------------
+// Review
+// ---------------------------------------------------------------------------
+
+/**
+ * The review, written for the model to judge rather than to relay.
+ *
+ * Every line here is arithmetic over the crawler's own page index. The
+ * questions it cannot answer — is this title content or a block page for *this*
+ * site, is 180 characters short for *these* pages — are exactly the ones left
+ * open, with the numbers attached so they can be answered.
+ */
+export function reviewForModel(name: string, r: PagesReport): string {
+  const lines: string[] = [
+    `${name}: ${r.total} pages captured (${r.seedPages} seed, ${r.extraPages} discovered)`,
+  ];
+
+  if (!r.hasText) {
+    // Without page text there is nothing to judge content by, and this is also
+    // why replay search will find nothing.
+    lines.push(
+      "No page text was captured, so the crawl ran without `text: to-pages`. " +
+        "Interstitials cannot be detected from the page index, and replay will not be searchable.",
+    );
+  } else {
+    // Median and longest together, so a bimodal crawl — real pages plus a
+    // repeated block page — is visible instead of averaged away.
+    lines.push(
+      `page text: median ${r.medianTextLength} chars, longest ${r.maxTextLength} chars` +
+        (r.maxTextLength !== undefined &&
+        r.medianTextLength !== undefined &&
+        r.maxTextLength > 10 * Math.max(1, r.medianTextLength)
+          ? " — a wide spread like this usually means most pages did not capture real content"
+          : ""),
+    );
+    if (r.emptyText) lines.push(`${r.emptyText} page(s) captured no text at all`);
+    if (r.thinPages.length) {
+      lines.push(
+        `${r.thinPages.length}${r.truncated ? "+" : ""} page(s) under ${r.thinThreshold} chars — ` +
+          `judge whether these are real content or a block page:\n` +
+          r.thinPages.map((p) => `  ${p.textLength} chars · ${p.title ?? "(no title)"} · ${p.url}`).join("\n"),
+      );
+    }
+  }
+
+  if (r.repeatedTitles.length) {
+    // Many pages sharing one title is the signature of an interstitial, and
+    // also of a legitimately templated site. The model has to decide which.
+    lines.push(
+      "titles shared by several pages — an interstitial looks like this, but so does a templated site:\n" +
+        r.repeatedTitles.map((t) => `  ${t.count}× "${t.title}" e.g. ${t.sample[0]}`).join("\n"),
+    );
+  }
+
+  const statuses = r.statuses.map((s) => `${s.value}×${s.count}`).join(" ");
+  if (statuses) lines.push(`http statuses: ${statuses}`);
+  if (r.notOk.length) {
+    lines.push(`non-2xx pages:\n` + r.notOk.map((p) => `  ${p.status} ${p.url}`).join("\n"));
+  }
+
+  if (r.hosts.length > 1) {
+    lines.push(
+      `${r.hosts.length} hosts, seed host ${r.seedHost ?? "?"}: ${r.hosts.map((h) => `${h.value}×${h.count}`).join(" ")}` +
+        (r.offHost.length ? " — check whether the scope was wider than intended" : ""),
+    );
+  }
+
+  if (r.partialLoads.length) {
+    lines.push(
+      `${r.partialLoads.length} page(s) did not fully load (loadState below 4):\n` +
+        r.partialLoads.map((p) => `  loadState ${p.loadState} ${p.url}`).join("\n"),
+    );
+  }
+
+  const mimes = r.mimes.filter((m) => m.value !== "text/html");
+  if (mimes.length) lines.push(`non-html captures: ${mimes.map((m) => `${m.value}×${m.count}`).join(" ")}`);
+
+  return lines.join("\n");
 }

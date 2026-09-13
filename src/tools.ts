@@ -17,7 +17,8 @@ import { Type } from "typebox";
 import { isCrawlRunning, killCrawl, runningCrawls } from "./engine.ts";
 import { buildInventory } from "./inventory.ts";
 import type { CrawlMonitor, WatchTarget } from "./monitor.ts";
-import { inventoryForModel, renderForModel } from "./render.ts";
+import { analyzePages, type PagesReport, readPages } from "./pages.ts";
+import { inventoryForModel, isLive, renderForModel, reviewForModel } from "./render.ts";
 import type { ReplayServers } from "./serve.ts";
 import { humanBytes } from "./sizes.ts";
 import { activeRun, collectionFor, ensureStore, prepareRun, type Store } from "./store.ts";
@@ -352,5 +353,80 @@ export function createTools(
     },
   });
 
-  return [runTool, statusTool, listTool, viewTool];
+  const reviewTool = defineTool({
+    name: "btrix_review",
+    label: "Review",
+    description:
+      "Summarise what a finished crawl actually captured: page counts, http statuses, hosts, repeated titles, " +
+      "pages with unusually little text, partial loads. It reports candidates, not conclusions — judge from them " +
+      "whether the capture is faithful, whether pages came through as an anti-bot interstitial, and whether the " +
+      "scope was what the user intended.",
+    promptSnippet: "Review what a finished crawl captured",
+    parameters: Type.Object({
+      name: Type.Optional(Type.String({ description: "Config or collection name. Defaults to the only crawl." })),
+    }),
+    async execute(_id, params) {
+      const store = getStore();
+      const legacy = getLegacy();
+      const inv = await buildInventory(store, legacy);
+
+      const asked = params.name ? normalizeName(String(params.name)) : undefined;
+      const candidates = asked
+        ? [asked]
+        : [...new Set([...inv.runs.map((r) => r.config), ...inv.archives.map((a) => a.collection)])];
+      if (candidates.length === 0) return text("Nothing has been crawled here yet.");
+      if (candidates.length > 1) {
+        return text(`Several crawls to choose from: ${candidates.join(", ")}. Ask for one by name.`);
+      }
+      const name = candidates[0]!;
+
+      // A run directory still has the page index; read it live.
+      const target = resolveTarget(store, monitor, name, legacy);
+      if (target) {
+        const dir = path.join(target.root, "collections", target.collection);
+        const pages = readPages(dir);
+        if (pages.found && pages.seed.length + pages.extra.length > 0) {
+          const report = analyzePages(pages);
+          const stats = await monitor.stats(target);
+          // Only warn when work is actually still happening. Naming the
+          // internal state here produced lines like "still no-stats".
+          const header = isLive(stats)
+            ? "Note: this crawl is still running, so the review is of a partial capture.\n"
+            : "";
+          return {
+            content: [{ type: "text", text: header + reviewForModel(target.collection, report) }],
+            details: { report, stats },
+          };
+        }
+      }
+
+      // Otherwise fall back to the report stored alongside the archive, which
+      // survives the run directory being pruned.
+      const archive = inv.archives.find(
+        (a) => a.collection === name || a.provenance?.config === `${name}.yaml`,
+      );
+      if (archive) {
+        const sidecarPath = path.join(store.outDir, `${archive.collection}.btrix.json`);
+        try {
+          const d = JSON.parse(fs.readFileSync(sidecarPath, "utf8")) as { review?: PagesReport };
+          if (d.review) {
+            return {
+              content: [{ type: "text", text: reviewForModel(archive.collection, d.review) }],
+              details: { report: d.review, fromSidecar: true },
+            };
+          }
+        } catch {
+          // No readable sidecar; fall through to the honest answer.
+        }
+        return text(
+          `${archive.collection} has an archive at ${archive.path}, but no page index is available to review — ` +
+            "its run directory is gone and the archive has no stored summary. Replay it with btrix_view instead.",
+        );
+      }
+
+      return text(`Nothing to review for ${name}. btrix_list shows what is here.`);
+    },
+  });
+
+  return [runTool, statusTool, listTool, viewTool, reviewTool];
 }

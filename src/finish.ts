@@ -7,6 +7,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { analyzePages, type PagesReport, readPages } from "./pages.ts";
 import type { CrawlStats } from "./stats.ts";
 import { collectionFor, type Store } from "./store.ts";
 
@@ -61,7 +62,13 @@ function freeName(dir: string, base: string, ext: string, runName: string): stri
   return candidate;
 }
 
-function writeSidecar(target: string, store: Store, o: FinishOptions, stats: CrawlStats): string {
+function writeSidecar(
+  target: string,
+  store: Store,
+  o: FinishOptions,
+  stats: CrawlStats,
+  review?: PagesReport,
+): string {
   const configFile = path.join(o.root, "config", `${o.config}.yaml`);
   const sidecar = `${target.replace(/\.wacz$/, "")}.btrix.json`;
   let configText: string | undefined;
@@ -90,6 +97,10 @@ function writeSidecar(target: string, store: Store, o: FinishOptions, stats: Cra
         errors: stats.errors,
         rateLimited: stats.rateLimited,
         lastProblem: stats.lastProblem,
+        // Carried here so a review still works after the run directory is
+        // pruned: the page index lives inside the wacz, which we would have to
+        // unzip to read.
+        review,
         stats,
       },
       null,
@@ -133,13 +144,17 @@ export async function finishRun(store: Store, o: FinishOptions, stats: CrawlStat
   const runName = path.basename(o.root);
   const wacz = findWacz(collectionDir);
 
+  // Summarise the page index before anything moves.
+  const pages = readPages(collectionDir);
+  const review = pages.found ? analyzePages(pages) : undefined;
+
   if (wacz) {
     fs.mkdirSync(store.outDir, { recursive: true });
     const dest = freeName(store.outDir, o.collection, ".wacz", runName);
     const partial = `${dest}.partial`;
     await fs.promises.rename(wacz, partial);
     await fs.promises.rename(partial, dest);
-    const sidecar = writeSidecar(dest, store, o, stats);
+    const sidecar = writeSidecar(dest, store, o, stats, review);
     return {
       kind: "promoted",
       dest,
@@ -154,7 +169,7 @@ export async function finishRun(store: Store, o: FinishOptions, stats: CrawlStat
     fs.mkdirSync(store.outDir, { recursive: true });
     const dest = freeName(store.outDir, o.collection, "", runName);
     await fs.promises.rename(collectionDir, dest);
-    const sidecar = writeSidecar(path.join(dest, o.collection), store, o, stats);
+    const sidecar = writeSidecar(path.join(dest, o.collection), store, o, stats, review);
     return {
       kind: "warc-only",
       dest,

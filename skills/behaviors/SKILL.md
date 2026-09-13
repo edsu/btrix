@@ -101,9 +101,10 @@ grep -o '"url": *"[^"]*"' collections/<name>/pages/extraPages.jsonl
 
 - [`assets/behavior-template.js`](assets/behavior-template.js) — a starting-point
   behavior with the addLink pattern baked in.
-- [`scripts/waczserve.py`](scripts/waczserve.py) — a Range + CORS static server
+- **Serving a WACZ for replay** — a Range + CORS static server
   for loading a large local `.wacz` into ReplayWeb.page:
-  `python3 scripts/waczserve.py <dir> <port>` then open
+  Use `btrix_view` for an archive in the store. For a WACZ anywhere else, run
+  `node <btrix>/src/serve.ts <dir> [port]` then open
   `https://replayweb.page/?source=http://localhost:<port>/<file>.wacz`.
 - [`reference/guide.md`](reference/guide.md) — the full guide + debugging playbook.
 - [`reference/crawler-options.md`](reference/crawler-options.md) — every `crawl`

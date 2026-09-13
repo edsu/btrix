@@ -84,6 +84,7 @@ profiles stay out of version control while `config/` remains yours to commit.
 | "crawl sulnews" | `btrix_run` starts `btrix/config/sulnews.yaml` detached, then the widget takes over |
 | "how's it going?" | `btrix_status` — but you usually won't need to ask, the widget is already showing it |
 | "what do I have?" | `btrix_list` — configs, runs and their state, archives, failed runs, free space |
+| "did that crawl work?" | `btrix_review` — what was actually captured, as candidates to judge |
 | "replay stanford-news" | `btrix_view` serves the archive and hands you a ReplayWeb.page link |
 | `/btrix [name]` | Repaint the widget, or show the inventory, by hand. No model turn |
 
@@ -120,7 +121,27 @@ lookup, and low free space is a threshold. A config that will produce no WACZ
 says so *before* you crawl with it rather than after.
 
 Both renderers state facts and leave diagnosis alone: you get `no new page 4m`,
-never `stalled`. Stall detection is a heuristic with a timeout, and moving it out of
+never `stalled`.
+
+`btrix_review` takes the same line with a finished crawl. It reads the crawler's
+own page index and reports *candidates*:
+
+```
+toi: 11 pages captured
+page text: median 48 chars, longest 9000 chars — a wide spread like this
+  usually means most pages did not capture real content
+7 page(s) under 600 chars — judge whether these are real content or a block page:
+  48 chars · Just a moment... · https://www.timesofisrael.com/blocked-0/
+titles shared by several pages — an interstitial looks like this, but so does
+  a templated site:
+  6× "Just a moment..." e.g. https://www.timesofisrael.com/blocked-0/
+2 hosts, seed host www.timesofisrael.com — check whether the scope was wider
+  than intended
+```
+
+Counting pages that share a title is arithmetic. Whether "Just a moment..." is
+a block page or a legitimate title for *this* site is a judgement, so it stays
+with the model — with the numbers attached so it can be made. Stall detection is a heuristic with a timeout, and moving it out of
 prose into TypeScript shouldn't launder a guess into certainty. Anything
 uncertain is carried by colour, not by adjective.
 
@@ -141,6 +162,7 @@ turn announcing the result.
 | Path | What |
 |---|---|
 | `src/inventory.ts` | "What do I have here?" as data: configs, runs, archives, orphans, free space |
+| `src/pages.ts` | Summarises the crawler's page index: statuses, hosts, repeated titles, thin pages |
 | `src/serve.ts` | Local replay server: HTTP ranges (including the suffix form) and CORS, in-process |
 | `src/config.ts` | The few config keys btrix needs, read line-wise rather than via a YAML dependency |
 | `src/store.ts` | Where files live: `--dir` / `$BTRIX_DIR` / `./btrix`, run directories, the `collection:` key |
@@ -159,6 +181,7 @@ turn announcing the result.
 | `test/fixtures/*.log` | Real crawl logs, so the parser is tested against what browsertrix actually emits |
 | `skills/behaviors/` | Writing and debugging custom crawl behaviors — carried over unchanged |
 | `skills/replay/` | Diagnosing replay failures: Chrome's local-network prompt, service workers, search |
+| `skills/new-crawl/` | Choosing scope, limits and delays; when a site needs a behavior or a login |
 
 Container invocation stays in shell on purpose: its whole job is picking an
 engine and assembling flags, and a rewrite would only cost you a
@@ -169,7 +192,7 @@ earn it.
 
 ```bash
 npm install
-npm test          # 100 tests, no container or model needed
+npm test          # 119 tests, no container or model needed
 npm run btrix     # run it here; the store lands in ./btrix (gitignored)
 npm link          # put `btrix` on your PATH, running this working tree
 npm run check     # tsc --noEmit
@@ -212,10 +235,14 @@ Then ask it to crawl `example`, and check the things that are the whole point:
 
 ## Status
 
-`run`, `status`, `list` and `view`, over a self-contained store, installable as
-a standalone command. Not yet ported from the Claude Code plugin: `review`,
-`profile`, `new`. Replay serving is in-process Node, so `python3` is only needed
-for the behaviors skill's own `waczserve.py` when debugging behaviors by hand.
+`run`, `status`, `list`, `view` and `review`, over a self-contained store,
+installable as a standalone command. No Python: replay serving is in-process
+Node, and `node src/serve.ts <dir> [port]` covers serving a WACZ from outside
+the store by hand.
+
+Still missing: `btrix_profile`, for crawling sites behind a login. Until it
+exists, a logged-in capture needs a profile made with browsertrix-crawler's own
+`create-login-profile` and a config pointing at it.
 
 One pi-ism remains deliberately visible: signing in is `/login`, because it is a
 built-in command, extension commands that collide with a built-in name are

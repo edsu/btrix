@@ -62,7 +62,13 @@ describe("extension wiring", () => {
   it("registers both tools with schemas, and no others", () => {
     const s = stubApi();
     extension(s.api);
-    expect(s.tools.map((t) => t.name).sort()).toEqual(["btrix_list", "btrix_run", "btrix_status", "btrix_view"]);
+    expect(s.tools.map((t) => t.name).sort()).toEqual([
+      "btrix_list",
+      "btrix_review",
+      "btrix_run",
+      "btrix_status",
+      "btrix_view",
+    ]);
     for (const tool of s.tools) {
       expect(tool.parameters).toBeTruthy();
       expect(typeof tool.execute).toBe("function");

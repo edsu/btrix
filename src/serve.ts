@@ -6,14 +6,16 @@
  * the end-of-central-directory record — then pulls individual entries. So it
  * never downloads the whole archive, but it does need working ranges and CORS.
  *
- * In-process rather than spawning the behaviors skill's waczserve.py: this is
- * about sixty lines, it drops the python3 dependency for replay, and the
- * lifecycle is a `close()` rather than tracking a child process.
+ * In-process rather than spawning a helper: this is about sixty lines, it needs
+ * no python3, and the lifecycle is a `close()` rather than tracking a child
+ * process. Runnable directly too, for serving a WACZ from outside the store —
+ * see the CLI at the bottom.
  */
 
 import * as fs from "node:fs";
 import * as http from "node:http";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export interface ReplayServer {
   port: number;
@@ -174,4 +176,34 @@ export class ReplayServers {
     this.servers.clear();
     await Promise.all(all.map((s) => s.close()));
   }
+}
+
+// ---------------------------------------------------------------------------
+// CLI
+// ---------------------------------------------------------------------------
+
+/**
+ * Runnable directly for serving an arbitrary directory by hand — the behaviors
+ * skill's replay-debugging path, which is not always a store archive:
+ *
+ *   node <btrix>/src/serve.ts <directory> [port]
+ *
+ * Guarded so importing this module never starts a server.
+ */
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const dir = process.argv[2];
+  const port = Number.parseInt(process.argv[3] ?? "8087", 10);
+  if (!dir) {
+    process.stderr.write("usage: serve.ts <directory> [port]\n");
+    process.exit(2);
+  }
+  const server = await serveDir(path.resolve(dir), Number.isFinite(port) ? port : 8087);
+  const archives = fs.readdirSync(server.dir).filter((f) => f.endsWith(".wacz"));
+  process.stdout.write(`Serving ${server.dir} on port ${server.port} (ranges + CORS). Ctrl-C to stop.\n`);
+  for (const a of archives) process.stdout.write(`\n  ${server.url(a)}\n`);
+  if (!archives.length) process.stdout.write("\n(no .wacz files in that directory)\n");
+  process.stdout.write(
+    "\nChrome 141+ asks for Local Network Access permission on first load; click Allow, " +
+      "or drag the .wacz onto https://replayweb.page instead.\n",
+  );
 }
