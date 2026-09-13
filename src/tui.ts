@@ -1,35 +1,45 @@
 /**
- * Adapting our line builders to pi's tool renderers.
+ * Adapting our line builders to pi's renderers.
  *
  * A Component only has to produce lines for a width, so the same functions that
  * draw the widget can draw a tool result. That is the point of doing this: the
  * inventory table renders itself in the transcript, instead of being handed to
  * the model as text for it to paraphrase back.
+ *
+ * Every line must fit the width it is given — pi throws on a component that
+ * overruns, which is right, since an overrun corrupts the whole frame. Wrapping
+ * therefore happens here, using pi's own ANSI-aware helpers rather than
+ * counting characters: colour sequences occupy no columns, so a line's length
+ * and its width are different numbers.
  */
 
-import type { Component } from "@earendil-works/pi-tui";
+import { type Component, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-/** Matches an ANSI colour sequence, whose characters do not occupy columns. */
-const ANSI = /\u001b\[[0-9;]*m/g;
+export interface LinesOptions {
+  indent?: string;
+  /**
+   * What to do with a line that does not fit.
+   *
+   * "wrap" for transcript content, where an over-long line is usually a url
+   * somebody needs to copy and cutting it off would make it useless. "clip"
+   * for the progress widget, which sits above the editor at a fixed height —
+   * there, a line that wraps pushes the editor down on every repaint.
+   */
+  overflow?: "wrap" | "clip";
+}
 
-const visibleLength = (s: string): number => s.replace(ANSI, "").length;
-
-/**
- * A component rendering fixed lines. Lines carrying colour are passed through
- * untouched: their apparent length is not their column count, so wrapping them
- * by character would break the escapes.
- */
-export function linesComponent(lines: string[], indent = ""): Component {
+/** A component rendering fixed lines, fitted to the viewport. */
+export function linesComponent(lines: string[], options: LinesOptions | string = {}): Component {
+  const { indent = "", overflow = "wrap" } = typeof options === "string" ? { indent: options } : options;
   return {
     // Static content, so there is nothing to recompute on invalidation.
     invalidate() {},
     render(width: number): string[] {
-      const max = Math.max(20, width - indent.length);
+      const max = Math.max(8, width - visibleWidth(indent));
       return lines.flatMap((line) => {
-        if (visibleLength(line) <= max || ANSI.test(line)) return [indent + line];
-        const parts: string[] = [];
-        for (let i = 0; i < line.length; i += max) parts.push(indent + line.slice(i, i + max));
-        return parts;
+        if (visibleWidth(line) <= max) return [indent + line];
+        if (overflow === "clip") return [indent + truncateToWidth(line, max)];
+        return wrapTextWithAnsi(line, max).map((part) => indent + part);
       });
     },
   };
@@ -37,6 +47,5 @@ export function linesComponent(lines: string[], indent = ""): Component {
 
 /** Truncate to a column budget, accounting for colour sequences. */
 export function ellipsis(text: string, max: number): string {
-  if (visibleLength(text) <= max) return text;
-  return `${text.slice(0, Math.max(0, max - 1))}…`;
+  return visibleWidth(text) <= max ? text : truncateToWidth(text, max);
 }

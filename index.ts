@@ -62,7 +62,9 @@ export default function (pi: ExtensionAPI) {
     onTick(stats, target) {
       const ctx = ctxRef;
       if (!ctx?.hasUI) return;
-      ctx.ui.setWidget(widgetKey(target.config), renderWidget(stats, ctx.ui.theme));
+      ctx.ui.setWidget(widgetKey(target.config), () =>
+        linesComponent(renderWidget(stats, ctx.ui.theme), { overflow: "clip" }),
+      );
 
       // Progress in the terminal title, so a long crawl is legible from a
       // backgrounded tab without switching to it.
@@ -256,7 +258,9 @@ export default function (pi: ExtensionAPI) {
       // Rendered here, so asking "what do I have?" costs no model turn.
       if (monitor.watched().length === 0) {
         const inv = await buildInventory(store, legacy);
-        ctx.ui.setWidget("btrix:inventory", renderInventory(inv, ctx.ui.theme), { placement: "belowEditor" });
+        ctx.ui.setWidget("btrix:inventory", () => linesComponent(renderInventory(inv, ctx.ui.theme)), {
+          placement: "belowEditor",
+        });
       }
     },
   });
@@ -270,7 +274,9 @@ export default function (pi: ExtensionAPI) {
     const auth = probeAuth(ctx.modelRegistry as never);
     if (ctx.hasUI) {
       if (!auth.ready) {
-        ctx.ui.setWidget("btrix:firstrun", firstRunPanel(auth), { placement: "belowEditor" });
+        ctx.ui.setWidget("btrix:firstrun", () => linesComponent(firstRunPanel(auth)), {
+          placement: "belowEditor",
+        });
       } else {
         ctx.ui.setWidget("btrix:firstrun", undefined);
         ctx.ui.setTitle("btrix");
