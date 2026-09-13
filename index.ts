@@ -22,6 +22,7 @@ import { listArchiveFiles, ReplayServers } from "./src/serve.ts";
 import { linesComponent } from "./src/tui.ts";
 import { humanBytes } from "./src/sizes.ts";
 import type { CrawlStats } from "./src/stats.ts";
+import { wordmarkLines } from "./src/wordmark.ts";
 import { activeRun, collectionFor, legacyRoot, resolveStore, type Store } from "./src/store.ts";
 import { applyNameCompletion, filterSuggestions, nameSuggestions, tokenBeforeCursor } from "./src/complete.ts";
 import { readConfig } from "./src/config.ts";
@@ -313,6 +314,9 @@ export default function (pi: ExtensionAPI) {
       // important part: finding out that Docker is absent or asleep here beats
       // finding out several minutes into an image pull.
       const [engine, inv] = await Promise.all([engineStatus(), buildInventory(store, legacy)]);
+      // A different gradient each start, or a flat theme colour where the
+      // terminal cannot do 24-bit colour.
+      const { lines: wordmark } = wordmarkLines({ plain: (l) => ctx.ui.theme.fg("accent", l) });
       const banner = startupLines(
         {
           inv,
@@ -320,6 +324,7 @@ export default function (pi: ExtensionAPI) {
           model: readyHeader(auth, store.root)[1],
           adopted: adopted.map((t) => t.config),
           unicode: supportsUnicode(),
+          wordmark,
         },
         ctx.ui.theme,
       );

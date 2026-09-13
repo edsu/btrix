@@ -32,19 +32,20 @@ that for you; an existing pi setup is left alone.
 and what to do next:
 
 ```
-  ╭──╮  ╭──╮  ╭──╮
-  │▒▒│→│▒▒│→│▒▒│        btrix  ·  high-fidelity web archives
-  ╰──╯  ╰──╯  ╰──╯      Browsertrix Crawler, driven by conversation
-      ╲   │   ╱
-      ╭───────╮         ./btrix · 39G free · anthropic/claude-opus-5
-      │ .wacz │         3 configs · 2 archives 41M · 1 login profile
-      ╰───────╯
+ _     _         _
+| |__ | |_  _ _ (_)__ __    high-fidelity web archives
+| '_ \|  _|| '_|| |\ \ /    Browsertrix Crawler, driven by conversation
+|_.__/ \__||_|  |_|/_\_\
+
+  ./btrix · 39G free · anthropic/claude-opus-5
+  3 configs · 1 archive 40M · 1 login profile
 
   cultprotest              crawling      12/30
   sulnews → stanford-news  done          25/25  40M
-  toi                      stopped       18/25
+  toi                      never run
 
   cultprotest is still crawling — watch the progress below.
+  ♥ Webrecorder builds the crawler — https://opencollective.com/webrecorder
 ```
 
 Then say what you want.
@@ -153,6 +154,12 @@ listing, reviewing, replaying, login profiles, behavior authoring and cleanup.
 
 Signing in to a model provider is `/login` — pi's own command, and the one place
 btrix's vocabulary does not reach.
+
+## Credits
+
+Browsertrix Crawler, and the WACZ format, are the work of
+[Webrecorder](https://webrecorder.net). btrix is only a front end — if it is
+useful to you, [support them](https://opencollective.com/webrecorder).
 
 ## License
 

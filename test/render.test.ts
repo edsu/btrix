@@ -195,13 +195,19 @@ describe("startupLines", () => {
     expect(out).toContain("less than 5G free");
   });
 
+  it("credits Webrecorder and links the collective", () => {
+    // btrix is a front end; the crawler is their work.
+    const out = banner();
+    expect(out).toContain("Webrecorder builds the crawler");
+    expect(out).toContain("https://opencollective.com/webrecorder");
+  });
+
   it("falls back to plain characters when the locale is not utf-8", () => {
-    // A banner of replacement characters is a poor first impression.
-    expect(banner({ unicode: true })).toContain("╭──╮");
+    // The wordmark is ASCII either way; the heart is not.
+    expect(banner({ unicode: true })).toContain("♥ Webrecorder");
     const plain = banner({ unicode: false });
-    expect(plain).not.toContain("╭");
-    expect(plain).toContain(".--.");
-    expect(plain).toContain("| .wacz |");
+    expect(plain).toContain("<3 Webrecorder");
+    expect(plain).not.toContain("♥");
   });
 
   it("stays short enough to read", () => {

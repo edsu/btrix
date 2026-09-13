@@ -8,6 +8,7 @@
  */
 
 import type { Inventory } from "./inventory.ts";
+import { WORDMARK } from "./wordmark.ts";
 import type { PagesReport } from "./pages.ts";
 import { nextStep } from "./inventory.ts";
 import { humanBytes, humanDuration } from "./sizes.ts";
@@ -366,6 +367,8 @@ export interface StartupInfo {
   adopted: string[];
   /** Whether box-drawing characters will render. Defaults to assuming yes. */
   unicode?: boolean;
+  /** Pre-coloured wordmark lines. Defaults to the uncoloured wordmark. */
+  wordmark?: string[];
 }
 
 /** "1 archive" / "2 archives", rather than "1 archive(s)". */
@@ -378,40 +381,6 @@ function visible(s: string): number {
   return s.replace(/\u001b\[[0-9;]*m/g, "").length;
 }
 
-
-/**
- * Pages being crawled, and coming to rest as an archive.
- *
- * Box-drawing characters are near-universal now, but institutional terminals
- * are not always set to a UTF-8 locale, and a banner of replacement characters
- * is a poor first impression — so there is a plain fallback.
- */
-const ART_WIDTH = 24;
-
-function artLines(theme: ThemeLike, unicode: boolean): string[] {
-  const page = (t: string) => theme.fg("accent", t);
-  const dim = (t: string) => theme.fg("dim", t);
-  if (!unicode) {
-    return [
-      dim("  .--.  .--.  .--."),
-      `  ${page("|##|")}${dim("->")}${page("|##|")}${dim("->")}${page("|##|")}`,
-      dim("  '--'  '--'  '--'"),
-      dim("      \\  |  /"),
-      `      ${page(".-------.")}`,
-      `      ${page("| .wacz |")}`,
-      `      ${page("'-------'")}`,
-    ];
-  }
-  return [
-    dim("  ╭──╮  ╭──╮  ╭──╮"),
-    `  ${page("│▒▒│")}${dim("→")}${page("│▒▒│")}${dim("→")}${page("│▒▒│")}`,
-    dim("  ╰──╯  ╰──╯  ╰──╯"),
-    dim("      ╲   │   ╱"),
-    `      ${page("╭───────╮")}`,
-    `      ${page("│ .wacz │")}`,
-    `      ${page("╰───────╯")}`,
-  ];
-}
 
 /** Whether the terminal is likely to render box-drawing characters. */
 export function supportsUnicode(env: Record<string, string | undefined> = process.env): boolean {
@@ -530,20 +499,22 @@ export function startupLines(info: StartupInfo, theme: ThemeLike = plainTheme): 
   }
   if (inv.profiles.length) facts.push(dim(plural(inv.profiles.length, "login profile")));
 
-  // The art carries the greeting beside it, so the banner reads as a welcome
-  // rather than a status dump.
+  // The wordmark carries the greeting beside it, so the banner reads as a
+  // welcome rather than a status dump.
   const beside = [
     "",
-    theme.fg("accent", "btrix") + dim("  ·  high-fidelity web archives"),
+    dim("high-fidelity web archives"),
     dim("Browsertrix Crawler, driven by conversation"),
     "",
-    head.join(sep),
-    facts.length ? facts.join(sep) : "",
-    "",
   ];
-  const art = artLines(theme, info.unicode ?? true);
-  const pad = (a: string) => a + " ".repeat(Math.max(2, ART_WIDTH - visible(a)));
-  const lines = art.map((a, i) => (beside[i] ? pad(a) + beside[i] : a));
+  const art = info.wordmark ?? WORDMARK;
+  const width = Math.max(...art.map(visible)) + 4;
+  const pad = (a: string) => a + " ".repeat(Math.max(2, width - visible(a)));
+  const lines = art.map((a, i) => (beside[i] ? pad(a) + beside[i] : a).replace(/\s+$/, ""));
+
+  lines.push("");
+  lines.push("  " + head.join(sep));
+  if (facts.length) lines.push("  " + facts.join(sep));
 
   const overview = overviewLines(inv, theme);
   if (overview.length) {
@@ -567,6 +538,13 @@ export function startupLines(info: StartupInfo, theme: ThemeLike = plainTheme): 
   if (info.engine.usable) {
     lines.push("  " + theme.fg("text", nextStepHint(inv, info.adopted)));
   }
+
+  // btrix is a front end; the crawler is Webrecorder's work, and saying so is
+  // both accurate and the least this can do. One dim line, every start.
+  lines.push(
+    "  " +
+      dim(`${info.unicode === false ? "<3" : "♥"} Webrecorder builds the crawler — https://opencollective.com/webrecorder`),
+  );
 
   // Only btrix's own affordances, and `/help` for the rest: listing keys that
   // the harness lets people rebind would be inventing an answer.
