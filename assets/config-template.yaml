@@ -1,0 +1,13 @@
+# Starting point for a crawl config. /crawl-new copies this to config/<name>.yaml.
+# Keep it minimal — only the keys you actually need.
+collection: example
+generateWACZ: true
+screencastPort: 9037
+scopeType: prefix
+screenshot: view
+# to-pages makes the archive full-text searchable in ReplayWeb.page (text goes
+# into the page index); to-warc also preserves the text as WARC records. Using
+# both is belt-and-suspenders: searchable AND text kept in the WARC.
+text: to-pages,to-warc
+seeds:
+  - url: https://example.com/

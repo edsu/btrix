@@ -1,0 +1,78 @@
+#!/usr/bin/env node
+/**
+ * btrix — a launcher, so that installing and running this needs no knowledge of
+ * pi.
+ *
+ * It starts a pi session with the btrix extension preloaded, a btrix system
+ * prompt, and only the tools this job needs. `read` or `bash` must stay in that
+ * list: pi only advertises skills in the system prompt when one of them is
+ * available, so dropping both would silently hide the behaviors and replay
+ * skills.
+ */
+
+import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const PKG = path.resolve(HERE, "..");
+const TOOLS = "btrix_run,btrix_status,btrix_list,btrix_view,read,write,edit,bash";
+
+/**
+ * Prefer the pi we were installed with, so a btrix release is pinned to a pi it
+ * was tested against, and fall back to one on PATH for a working-tree checkout.
+ */
+function findPi() {
+  const require = createRequire(import.meta.url);
+  try {
+    const manifest = require.resolve("@earendil-works/pi-coding-agent/package.json");
+    const dir = path.dirname(manifest);
+    const bin = JSON.parse(fs.readFileSync(manifest, "utf8")).bin;
+    const rel = typeof bin === "string" ? bin : bin?.pi;
+    if (rel) {
+      const entry = path.join(dir, rel);
+      if (fs.existsSync(entry)) return { command: process.execPath, prefix: [entry] };
+    }
+  } catch {
+    // Not installed as a dependency; a checkout run with `npm link` lands here.
+  }
+  return { command: "pi", prefix: [] };
+}
+
+const systemPrompt = fs.readFileSync(path.join(PKG, "assets", "system-prompt.md"), "utf8");
+const { command, prefix } = findPi();
+
+const args = [
+  ...prefix,
+  "--extension",
+  PKG,
+  "--system-prompt",
+  systemPrompt,
+  "--tools",
+  TOOLS,
+  ...process.argv.slice(2),
+];
+
+const child = spawn(command, args, { stdio: "inherit" });
+
+child.on("error", (err) => {
+  if (err.code === "ENOENT" && command === "pi") {
+    process.stderr.write(
+      "btrix could not find its agent runtime.\n" +
+        "If you are running from a checkout, install it with:\n\n" +
+        "  npm install -g @earendil-works/pi-coding-agent\n\n",
+    );
+    process.exit(127);
+  }
+  process.stderr.write(`btrix failed to start: ${err.message}\n`);
+  process.exit(1);
+});
+
+// Signals reach the child through the shared terminal; just mirror its exit so
+// scripts calling btrix see the real status.
+child.on("exit", (code, signal) => {
+  if (signal) process.kill(process.pid, signal);
+  else process.exit(code ?? 0);
+});

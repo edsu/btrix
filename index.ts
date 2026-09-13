@@ -20,6 +20,7 @@ import { ReplayServers } from "./src/serve.ts";
 import { humanBytes } from "./src/sizes.ts";
 import type { CrawlStats } from "./src/stats.ts";
 import { activeRun, collectionFor, legacyRoot, resolveStore, type Store } from "./src/store.ts";
+import { firstRunPanel, probeAuth, readyHeader } from "./src/firstrun.ts";
 import { buildInventory } from "./src/inventory.ts";
 import { configPath, createTools, listConfigs } from "./src/tools.ts";
 
@@ -165,6 +166,19 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     ctxRef = ctx;
 
+    // Someone who installed btrix has not necessarily heard of pi, and with no
+    // credentials the runtime's own message names itself and a node_modules
+    // path. Get in front of that with something actionable.
+    const auth = probeAuth(ctx.modelRegistry as never);
+    if (ctx.hasUI) {
+      if (!auth.ready) {
+        ctx.ui.setWidget("btrix:firstrun", firstRunPanel(auth), { placement: "belowEditor" });
+      } else {
+        ctx.ui.setWidget("btrix:firstrun", undefined);
+        ctx.ui.setTitle("btrix");
+      }
+    }
+
     // --dir is only available once the CLI has parsed it.
     const flag = pi.getFlag("dir");
     store = resolveStore({ dir: typeof flag === "string" ? flag : undefined, cwd: ctx.cwd ?? cwd });
@@ -176,13 +190,25 @@ export default function (pi: ExtensionAPI) {
     if (adopted.length) {
       await monitor.tick();
       if (ctx.hasUI) ctx.ui.notify(`btrix: watching ${adopted.map((t) => t.config).join(", ")}`, "info");
-    } else if (ctx.hasUI && store.source === "default" && listConfigs(store).length === 0) {
+    } else if (ctx.hasUI && auth.ready && store.source === "default" && listConfigs(store).length === 0) {
       ctx.ui.notify(`btrix: no crawls here yet. A store will be created at ${store.root} when you start one.`, "info");
+    }
+
+    if (ctx.hasUI && auth.ready) {
+      ctx.ui.setStatus("btrix", ctx.ui.theme.fg("dim", readyHeader(auth, store.root)[1] ?? ""));
     }
   });
 
   // Confirmation gate. pi ships no permission system by design, so anything
   // worth a prompt is ours to ask.
+  pi.on("turn_start", async (_event, ctx) => {
+    // The user may have run /login since startup.
+    if (ctx.hasUI && probeAuth(ctx.modelRegistry as never).ready) {
+      ctx.ui.setWidget("btrix:firstrun", undefined);
+    }
+    return undefined;
+  });
+
   pi.on("tool_result", async (_event, ctx) => {
     const live = servers.running();
     if (live.length && ctx.hasUI) {
@@ -212,7 +238,9 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", async () => {
     for (const target of monitor.watched()) ctxRef?.ui.setWidget(widgetKey(target.config), undefined);
     ctxRef?.ui.setWidget("btrix:inventory", undefined);
+    ctxRef?.ui.setWidget("btrix:firstrun", undefined);
     ctxRef?.ui.setStatus("btrix-replay", undefined);
+    ctxRef?.ui.setStatus("btrix", undefined);
     monitor.dispose();
     // Crawls are left running on purpose; replay servers are not.
     await servers.closeAll();

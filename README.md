@@ -32,17 +32,24 @@ explaining what went wrong.
 
 ## Install
 
-Requires [Docker or Podman](https://docs.docker.com/get-docker/) and pi.
+Requires [Docker or Podman](https://docs.docker.com/get-docker/) and Node 22.19+.
 
 ```bash
-npm i -g @earendil-works/pi-coding-agent
-pi install git:github.com/edsu/btrix
+npm install -g btrix
+btrix
 ```
 
-Or, from a clone:
+On first run btrix asks you to connect a language model — type `/login` for a
+Claude, ChatGPT or Copilot subscription, or set an API key such as
+`ANTHROPIC_API_KEY`. Crawling itself runs locally in a container and needs no
+account.
+
+btrix is built on the [pi](https://pi.dev) agent harness, which comes along as a
+dependency; you do not need to install or know anything about it. If you already
+use pi, you can load btrix as an extension instead:
 
 ```bash
-pi -e ~/Projects/btrix
+pi install git:github.com/edsu/btrix
 ```
 
 ## Use
@@ -144,7 +151,10 @@ turn announcing the result.
 | `src/render.ts` | `CrawlStats` → widget lines, and → a compact line for the model |
 | `src/engine.ts` | podman-or-docker, and which containers are crawling what |
 | `src/tools.ts` | `btrix_run`, `btrix_status` |
-| `index.ts` | pi wiring only: tools, widget, entry renderer, disk-space gate |
+| `index.ts` | pi wiring only: tools, widget, entry renderer, disk-space gate, first run |
+| `bin/btrix.js` | The `btrix` command: starts a session with the extension, prompt and tools preloaded |
+| `assets/system-prompt.md` | What btrix is, and how it should behave |
+| `src/firstrun.ts` | Detects a missing model credential and says something useful about it |
 | `scripts/run.sh` | The `docker run`. Stays shell so you can run a crawl by hand |
 | `test/fixtures/*.log` | Real crawl logs, so the parser is tested against what browsertrix actually emits |
 | `skills/behaviors/` | Writing and debugging custom crawl behaviors — carried over unchanged |
@@ -159,8 +169,9 @@ earn it.
 
 ```bash
 npm install
-npm test          # 94 tests, no container or model needed
+npm test          # 100 tests, no container or model needed
 npm run btrix     # run it here; the store lands in ./btrix (gitignored)
+npm link          # put `btrix` on your PATH, running this working tree
 npm run check     # tsc --noEmit
 ```
 
@@ -185,8 +196,9 @@ pi -e ~/Projects/btrix
 ```
 
 `npm run btrix` does the same from inside the repo, but only from there — `npm
-run` needs a `package.json` in the cwd or an ancestor, so a scratch crawl
-directory needs the `pi -e` form.
+run` needs a `package.json` in the cwd or an ancestor. For a scratch crawl
+directory, either `npm link` once and then run `btrix`, or use the `pi -e` form
+above.
 
 Then ask it to crawl `example`, and check the things that are the whole point:
 
@@ -200,10 +212,15 @@ Then ask it to crawl `example`, and check the things that are the whole point:
 
 ## Status
 
-`run`, `status`, `list` and `view`, over a self-contained store. Not yet ported
-from the Claude Code plugin: `review`, `profile`, `new`. Replay serving is now
-in-process Node, so `python3` is only needed for the behaviors skill's own
-`waczserve.py` when debugging behaviors by hand.
+`run`, `status`, `list` and `view`, over a self-contained store, installable as
+a standalone command. Not yet ported from the Claude Code plugin: `review`,
+`profile`, `new`. Replay serving is in-process Node, so `python3` is only needed
+for the behaviors skill's own `waczserve.py` when debugging behaviors by hand.
+
+One pi-ism remains deliberately visible: signing in is `/login`, because it is a
+built-in command, extension commands that collide with a built-in name are
+filtered out, and there is no API for triggering it. Everything else — the
+prompt, the tools, the frame — is btrix.
 
 ## License
 

@@ -45,8 +45,10 @@ function stubCtx(overrides: Record<string, unknown> = {}) {
     hasUI: true,
     mode: "tui",
     cwd: process.cwd(),
+    modelRegistry: { getAvailable: () => [], hasConfiguredAuth: () => false },
     ui: {
       theme: { fg: (_c: string, t: string) => t, bg: (_c: string, t: string) => t },
+      setTitle: vi.fn(),
       setWidget: vi.fn(),
       setStatus: vi.fn(),
       notify: vi.fn(),
@@ -79,7 +81,13 @@ describe("extension wiring", () => {
     extension(s.api);
     expect([...s.commands.keys()]).toEqual(["btrix"]);
     expect([...s.entryRenderers.keys()]).toEqual(["btrix-summary"]);
-    expect([...s.events.keys()].sort()).toEqual(["session_shutdown", "session_start", "tool_call", "tool_result"]);
+    expect([...s.events.keys()].sort()).toEqual([
+      "session_shutdown",
+      "session_start",
+      "tool_call",
+      "tool_result",
+      "turn_start",
+    ]);
   });
 
   it("starts no timer in the factory", () => {
