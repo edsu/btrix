@@ -48,7 +48,12 @@ export class CrawlMonitor {
     this.intervalMs = opts.intervalMs ?? 1_000;
   }
 
-  /** Begin (or resume) tailing. Idempotent per config name. */
+  /**
+   * Begin (or resume) tailing. Idempotent per config name.
+   *
+   * Callers that merely want a reading should use `stats()`: watching a crawl
+   * that has already finished puts it back on screen as though it were live.
+   */
   watch(target: WatchTarget): void {
     const existing = this.entries.get(target.config);
     if (existing && existing.target.root === target.root) {
@@ -117,7 +122,7 @@ export class CrawlMonitor {
     if (this.ticking) return;
     this.ticking = true;
     try {
-      for (const [, e] of [...this.entries]) {
+      for (const [name, e] of [...this.entries]) {
         if (e.settled) continue;
         let stats: CrawlStats;
         try {
@@ -130,6 +135,11 @@ export class CrawlMonitor {
         if (e.sawLive && TERMINAL.has(stats.state) && !stats.containerRunning) {
           e.settled = true;
           await this.opts.onComplete?.(stats, e.target);
+          // Stop polling it. A finished crawl left in the loop keeps getting
+          // repainted, which is how a completed crawl ended up sitting in the
+          // widget looking active.
+          this.entries.delete(name);
+          if (this.entries.size === 0) this.stop();
         }
       }
     } finally {

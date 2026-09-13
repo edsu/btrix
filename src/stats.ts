@@ -12,6 +12,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isCrawlRunning } from "./engine.ts";
+import { promotedArchive } from "./outcome.ts";
 import { type CrawlPhase, emptyFacts, foldLine, type LogFacts, type PendingPage } from "./log.ts";
 import { dirSize, fileSize, freeSpace } from "./sizes.ts";
 
@@ -76,6 +77,7 @@ const SIZE_REFRESH_MS = 5_000;
 export class CrawlTailer {
   readonly name: string;
   readonly config?: string;
+  private readonly root: string;
   private readonly dir: string;
   private readonly facts: LogFacts = emptyFacts();
   private readonly offsets = new Map<string, number>();
@@ -90,6 +92,7 @@ export class CrawlTailer {
   constructor(name: string, root: string = process.cwd(), config?: string) {
     this.name = name;
     this.config = config;
+    this.root = root;
     this.dir = path.join(root, "collections", name);
   }
 
@@ -163,13 +166,22 @@ export class CrawlTailer {
     return fs.existsSync(this.dir) ? this.dir : ".";
   }
 
+  /**
+   * The archive for this run, wherever it now is.
+   *
+   * A finished crawl's wacz is moved into the store's out/, so looking only in
+   * the collection directory would find nothing and the run would read as
+   * unfinished forever. The outcome marker written at promotion says where it
+   * went.
+   */
   private waczPath(): string | undefined {
     try {
       const hit = fs.readdirSync(this.dir).find((f) => f.endsWith(".wacz"));
-      return hit ? path.join(this.dir, hit) : undefined;
+      if (hit) return path.join(this.dir, hit);
     } catch {
-      return undefined;
+      // No collection directory yet.
     }
+    return promotedArchive(this.root);
   }
 
   /** Take a reading. Safe to call at 1 Hz. */
@@ -242,10 +254,18 @@ export class CrawlTailer {
  */
 export function deriveState(o: { facts: LogFacts; wacz: boolean; containerRunning: boolean }): CrawlState {
   if (o.wacz) return "done";
+
+  // With nothing running, no phase can still be in progress. The log's last
+  // line says where the crawl got to, not what it is doing now — reading it as
+  // the present tense is what made a finished crawl report "writing wacz"
+  // indefinitely once its archive had been promoted out of the run directory.
+  if (!o.containerRunning) {
+    return o.facts.crawled > 0 || o.facts.total > 0 ? "stopped" : "no-stats";
+  }
+
   if (o.facts.phase === "generating-wacz") return "generating-wacz";
-  if (o.facts.phase === "post-crawl") return o.containerRunning ? "post-crawl" : "stopped";
-  if (o.containerRunning) return o.facts.phase === "starting" ? "no-stats" : "crawling";
-  return o.facts.crawled > 0 || o.facts.total > 0 ? "stopped" : "no-stats";
+  if (o.facts.phase === "post-crawl") return "post-crawl";
+  return o.facts.phase === "starting" ? "no-stats" : "crawling";
 }
 
 /** Collection directories present under ./collections. */

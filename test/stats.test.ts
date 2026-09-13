@@ -42,3 +42,28 @@ describe("deriveState", () => {
     expect(deriveState({ facts: f, wacz: true, containerRunning: false })).toBe("done");
   });
 });
+
+describe("a finished crawl does not read as an active one", () => {
+  // Observed in use: a completed crawl sat in the widget reporting
+  // "writing wacz — in progress" for the rest of the session.
+  it("never reports an in-progress phase with nothing running", () => {
+    for (const phase of ["generating-wacz", "post-crawl", "crawling"] as const) {
+      const state = deriveState({
+        facts: facts({ phase, crawled: 4, total: 4 }),
+        wacz: false,
+        containerRunning: false,
+      });
+      // The log's last line says where it got to, not what it is doing.
+      expect(state).toBe("stopped");
+    }
+  });
+
+  it("still reports progress while a container is alive", () => {
+    expect(
+      deriveState({ facts: facts({ phase: "generating-wacz", crawled: 4, total: 4 }), wacz: false, containerRunning: true }),
+    ).toBe("generating-wacz");
+    expect(
+      deriveState({ facts: facts({ phase: "post-crawl", crawled: 4, total: 4 }), wacz: false, containerRunning: true }),
+    ).toBe("post-crawl");
+  });
+});

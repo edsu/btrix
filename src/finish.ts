@@ -8,6 +8,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { readConfig } from "./config.ts";
+import { writeOutcomeMarker } from "./outcome.ts";
 import { analyzePages, type PagesReport, readPages } from "./pages.ts";
 import type { CrawlStats } from "./stats.ts";
 import { collectionFor, type Store } from "./store.ts";
@@ -156,6 +157,9 @@ export async function finishRun(store: Store, o: FinishOptions, stats: CrawlStat
     await fs.promises.rename(wacz, partial);
     await fs.promises.rename(partial, dest);
     const sidecar = writeSidecar(dest, store, o, stats, review);
+    // Record where it went, or anything later reading this run directory will
+    // conclude the crawl never finished.
+    writeOutcomeMarker(o.root, { kind: "promoted", dest, sidecar, at: new Date().toISOString() });
     return {
       kind: "promoted",
       dest,
@@ -172,6 +176,7 @@ export async function finishRun(store: Store, o: FinishOptions, stats: CrawlStat
     const dest = freeName(store.outDir, o.collection, "", runName);
     await fs.promises.rename(collectionDir, dest);
     const sidecar = writeSidecar(path.join(dest, o.collection), store, o, stats, review);
+    writeOutcomeMarker(o.root, { kind: "warc-only", dest, sidecar, at: new Date().toISOString() });
     const wanted = readConfig(path.join(o.root, "config", `${o.config}.yaml`), o.config).generateWacz;
     return {
       kind: "warc-only",
@@ -185,6 +190,7 @@ export async function finishRun(store: Store, o: FinishOptions, stats: CrawlStat
     };
   }
 
+  writeOutcomeMarker(o.root, { kind: "failed", at: new Date().toISOString() });
   fs.mkdirSync(store.failedDir, { recursive: true });
   const parked = path.join(store.failedDir, runName);
   try {

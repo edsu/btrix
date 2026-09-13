@@ -298,7 +298,9 @@ export function createTools(
       }
 
       const stats = await monitor.stats(target);
-      monitor.watch(target);
+      // Only follow it if there is something to follow; watching a finished
+      // crawl would park it in the widget as though it were still going.
+      if (isLive(stats)) monitor.watch(target);
       return { content: [{ type: "text", text: renderForModel(stats) }], details: stats };
     },
   });
