@@ -157,7 +157,13 @@ export function createTools(
     renderResult(result, _options, theme) {
       const stats = result.details as CrawlStats | undefined;
       if (!stats?.name) return linesComponent(result.content.map((c: any) => String(c.text ?? "")));
-      return linesComponent(renderWidget(stats, theme));
+      // Just a confirmation. The widget above the editor is already showing the
+      // live figures, and drawing them here too put the same block on screen
+      // twice.
+      const counts = stats.total ? `${stats.crawled}/${stats.total}` : `${stats.crawled} pages`;
+      return linesComponent([
+        `${theme.fg("accent", "crawling")} ${theme.fg("text", stats.name)} ${theme.fg("dim", `${counts} · progress below`)}`,
+      ]);
     },
     async execute(_id, params, signal, onUpdate) {
       const store = getStore();
@@ -225,7 +231,15 @@ export function createTools(
         const stats = await monitor.stats(target);
         if (stats.crawled > 0 || stats.total > 0) {
           return {
-            content: [{ type: "text", text: `Started ${config}. ${renderForModel(stats)}` }],
+            content: [
+              {
+                type: "text",
+                text:
+                  `Started ${config}. ${renderForModel(stats)}\n` +
+                  "Progress renders itself from here. Say it started and leave the figures to the widget; " +
+                  "you will be told when it finishes.",
+              },
+            ],
             details: stats,
           };
         }

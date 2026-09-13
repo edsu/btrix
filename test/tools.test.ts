@@ -191,3 +191,22 @@ describe("btrix_review", () => {
     expect(said(await run(tool("btrix_review"), {}))).toContain("Several crawls");
   });
 });
+
+describe("the launcher's tool allowlist", () => {
+  it("lists every tool that is actually registered", async () => {
+    // It drifted once: six tools were unreachable through the btrix command
+    // while working fine under `pi -e .`, because this list was written before
+    // they existed.
+    const { BTRIX_TOOLS } = await import("../src/toolnames.ts");
+    const registered = createTools(monitor, () => store)
+      .map((t) => t.name)
+      .sort();
+    expect([...BTRIX_TOOLS].sort()).toEqual(registered);
+  });
+
+  it("keeps a file-reading tool, or skills stop being advertised", async () => {
+    // pi only lists skills in the system prompt when read or bash is enabled.
+    const { HELPER_TOOLS } = await import("../src/toolnames.ts");
+    expect(HELPER_TOOLS.some((t) => t === "read" || t === "bash")).toBe(true);
+  });
+});

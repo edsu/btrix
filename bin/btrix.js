@@ -4,10 +4,8 @@
  * pi.
  *
  * It starts a pi session with the btrix extension preloaded, a btrix system
- * prompt, and only the tools this job needs. `read` or `bash` must stay in that
- * list: pi only advertises skills in the system prompt when one of them is
- * available, so dropping both would silently hide the behaviors and replay
- * skills.
+ * prompt, and only the tools this job needs — read from src/toolnames.ts, so
+ * the list cannot drift behind the tools that actually exist.
  */
 
 import { spawn } from "node:child_process";
@@ -20,7 +18,11 @@ import * as os from "node:os";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, "..");
-const TOOLS = "btrix_run,btrix_status,btrix_list,btrix_view,read,write,edit,bash";
+
+// Read from the same list the tools are registered from, so the allowlist
+// cannot drift out of date the way it did.
+const { ALL_TOOLS } = await import(path.join(PKG, "src", "toolnames.ts"));
+const TOOLS = ALL_TOOLS.join(",");
 
 /**
  * Prefer the pi we were installed with, so a btrix release is pinned to a pi it
