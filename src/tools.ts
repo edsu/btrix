@@ -15,8 +15,11 @@ import { fileURLToPath } from "node:url";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { isCrawlRunning, killCrawl, runningCrawls } from "./engine.ts";
+import { buildInventory } from "./inventory.ts";
 import type { CrawlMonitor, WatchTarget } from "./monitor.ts";
-import { renderForModel } from "./render.ts";
+import { inventoryForModel, renderForModel } from "./render.ts";
+import type { ReplayServers } from "./serve.ts";
+import { humanBytes } from "./sizes.ts";
 import { activeRun, collectionFor, ensureStore, prepareRun, type Store } from "./store.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -108,6 +111,7 @@ export function createTools(
   monitor: CrawlMonitor,
   getStore: () => Store,
   getLegacy: () => string | undefined = () => undefined,
+  servers?: ReplayServers,
 ): ToolDefinition<any, any, any>[] {
   const runTool = defineTool({
     name: "btrix_run",
@@ -254,5 +258,99 @@ export function createTools(
     },
   });
 
-  return [runTool, statusTool];
+  const listTool = defineTool({
+    name: "btrix_list",
+    label: "Inventory",
+    description:
+      "List what is in the btrix store: configs, runs and their state, finished archives, profiles, failed runs " +
+      "and free space. Use it to find a name you were not given, or to answer what the user has.",
+    promptSnippet: "List btrix configs, crawls and archives",
+    parameters: Type.Object({}),
+    async execute() {
+      const inv = await buildInventory(getStore(), getLegacy());
+      return { content: [{ type: "text", text: inventoryForModel(inv) }], details: inv };
+    },
+  });
+
+  const viewTool = defineTool({
+    name: "btrix_view",
+    label: "Replay",
+    description:
+      "Serve a finished archive locally and return a ReplayWeb.page URL for it. The server keeps running until " +
+      "the session ends. Relay the Chrome local-network caveat in the result to the user before they open the link.",
+    promptSnippet: "Replay a finished crawl in ReplayWeb.page",
+    parameters: Type.Object({
+      name: Type.Optional(Type.String({ description: "Collection or config name. Defaults to the only archive." })),
+    }),
+    async execute(_id, params) {
+      if (!servers) return text("Replay is unavailable: no server manager was wired up.");
+      const store = getStore();
+      const inv = await buildInventory(store, getLegacy());
+
+      if (!inv.archives.length) {
+        const inProgress = inv.runs.filter((r) => r.stats.state !== "done" && r.stats.state !== "stopped");
+        if (inProgress.length) {
+          return text(
+            `No finished archive yet — ${inProgress.map((r) => r.config).join(", ")} ${inProgress.length === 1 ? "is" : "are"} still running.`,
+          );
+        }
+        const noWacz = inv.configs.filter((c) => !c.generateWacz).map((c) => c.name);
+        return text(
+          "There are no archives in the store yet." +
+            (noWacz.length ? ` Note that ${noWacz.join(", ")} ${noWacz.length === 1 ? "has" : "have"} generateWACZ off, so no wacz will be produced.` : ""),
+        );
+      }
+
+      const asked = params.name ? normalizeName(String(params.name)) : undefined;
+      const archive = asked
+        ? // Accept either the collection name or the config name that produced it.
+          inv.archives.find((a) => a.collection === asked) ??
+          inv.archives.find((a) => a.provenance?.config === `${asked}.yaml`) ??
+          inv.archives.find((a) => inv.configs.some((c) => c.name === asked && c.collection === a.collection))
+        : inv.archives.length === 1
+          ? inv.archives[0]
+          : undefined;
+
+      if (!archive) {
+        const names = inv.archives.map((a) => a.collection).join(", ");
+        return text(asked ? `No archive called ${asked}. Available: ${names}` : `Several archives: ${names}. Ask for one by name.`);
+      }
+
+      if (archive.kind === "warc-dir") {
+        return text(
+          `${archive.collection} was crawled with generateWACZ off, so there is no wacz to replay — only WARCs at ` +
+            `${archive.path}. Re-crawl with generateWACZ: true to replay it.`,
+        );
+      }
+
+      const server = await servers.get(path.dirname(archive.path));
+      const file = path.basename(archive.path);
+      const config = inv.configs.find((c) => c.collection === archive.collection);
+
+      const notes = [
+        "Chrome 141+ and Edge require the Local Network Access permission for a page on replayweb.page to reach " +
+          "localhost: the user must click Allow on the first load, or replay fails with " +
+          '"An unexpected error occured: TypeError: Failed to fetch", which looks like a corrupt archive but is not. ' +
+          "Dragging the .wacz onto replayweb.page avoids the permission entirely.",
+      ];
+      // Page search only works if the crawl wrote page text.
+      if (config && !config.textToPages) {
+        notes.push(`${archive.collection} was crawled without "text: to-pages", so it replays but is not full-text searchable.`);
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              `Serving ${file} (${humanBytes(archive.bytes)}) on port ${server.port}. Replay at:\n${server.url(file)}\n\n` +
+              notes.join("\n\n"),
+          },
+        ],
+        details: { port: server.port, url: server.url(file), archive },
+      };
+    },
+  });
+
+  return [runTool, statusTool, listTool, viewTool];
 }

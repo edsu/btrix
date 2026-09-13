@@ -48,6 +48,7 @@ function stubCtx(overrides: Record<string, unknown> = {}) {
     ui: {
       theme: { fg: (_c: string, t: string) => t, bg: (_c: string, t: string) => t },
       setWidget: vi.fn(),
+      setStatus: vi.fn(),
       notify: vi.fn(),
       confirm: vi.fn().mockResolvedValue(true),
     },
@@ -59,7 +60,7 @@ describe("extension wiring", () => {
   it("registers both tools with schemas, and no others", () => {
     const s = stubApi();
     extension(s.api);
-    expect(s.tools.map((t) => t.name).sort()).toEqual(["btrix_run", "btrix_status"]);
+    expect(s.tools.map((t) => t.name).sort()).toEqual(["btrix_list", "btrix_run", "btrix_status", "btrix_view"]);
     for (const tool of s.tools) {
       expect(tool.parameters).toBeTruthy();
       expect(typeof tool.execute).toBe("function");
@@ -78,7 +79,7 @@ describe("extension wiring", () => {
     extension(s.api);
     expect([...s.commands.keys()]).toEqual(["btrix"]);
     expect([...s.entryRenderers.keys()]).toEqual(["btrix-summary"]);
-    expect([...s.events.keys()].sort()).toEqual(["session_shutdown", "session_start", "tool_call"]);
+    expect([...s.events.keys()].sort()).toEqual(["session_shutdown", "session_start", "tool_call", "tool_result"]);
   });
 
   it("starts no timer in the factory", () => {

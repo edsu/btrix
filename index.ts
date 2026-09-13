@@ -15,10 +15,12 @@ import { Box, Text } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { finishRun, type Outcome } from "./src/finish.ts";
 import { CrawlMonitor, type WatchTarget } from "./src/monitor.ts";
-import { renderForModel, renderWidget } from "./src/render.ts";
+import { renderForModel, renderInventory, renderWidget } from "./src/render.ts";
+import { ReplayServers } from "./src/serve.ts";
 import { humanBytes } from "./src/sizes.ts";
 import type { CrawlStats } from "./src/stats.ts";
 import { activeRun, collectionFor, legacyRoot, resolveStore, type Store } from "./src/store.ts";
+import { buildInventory } from "./src/inventory.ts";
 import { configPath, createTools, listConfigs } from "./src/tools.ts";
 
 /** Free space below which starting a crawl is worth a confirmation. */
@@ -85,10 +87,15 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  // Replay servers are session-scoped: unlike a crawl, a stray HTTP server
+  // serving your archives after you quit is not something anyone wants.
+  const servers = new ReplayServers();
+
   for (const tool of createTools(
     monitor,
     () => store,
     () => legacy,
+    servers,
   )) {
     pi.registerTool(tool);
   }
@@ -140,11 +147,18 @@ export default function (pi: ExtensionAPI) {
           return;
         }
         monitor.watch(target);
-      } else if ((await monitor.adoptRunning(targetFor)).length === 0 && monitor.watched().length === 0) {
-        ctx.ui.notify("No crawl is running. Start one with btrix_run.", "info");
+        await monitor.tick();
         return;
       }
+
+      await monitor.adoptRunning(targetFor);
       await monitor.tick();
+      // Nothing live to watch: show the inventory instead of an empty widget.
+      // Rendered here, so asking "what do I have?" costs no model turn.
+      if (monitor.watched().length === 0) {
+        const inv = await buildInventory(store, legacy);
+        ctx.ui.setWidget("btrix:inventory", renderInventory(inv, ctx.ui.theme), { placement: "belowEditor" });
+      }
     },
   });
 
@@ -169,6 +183,14 @@ export default function (pi: ExtensionAPI) {
 
   // Confirmation gate. pi ships no permission system by design, so anything
   // worth a prompt is ours to ask.
+  pi.on("tool_result", async (_event, ctx) => {
+    const live = servers.running();
+    if (live.length && ctx.hasUI) {
+      ctx.ui.setStatus("btrix-replay", ctx.ui.theme.fg("dim", `replay :${live.map((s) => s.port).join(",")}`));
+    }
+    return undefined;
+  });
+
   pi.on("tool_call", async (event, ctx) => {
     if (event.toolName !== "btrix_run") return undefined;
     const config = String((event.input as { config?: unknown }).config ?? "");
@@ -189,7 +211,11 @@ export default function (pi: ExtensionAPI) {
   // crawl outliving the session is the point.
   pi.on("session_shutdown", async () => {
     for (const target of monitor.watched()) ctxRef?.ui.setWidget(widgetKey(target.config), undefined);
+    ctxRef?.ui.setWidget("btrix:inventory", undefined);
+    ctxRef?.ui.setStatus("btrix-replay", undefined);
     monitor.dispose();
+    // Crawls are left running on purpose; replay servers are not.
+    await servers.closeAll();
     ctxRef = undefined;
   });
 }

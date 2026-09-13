@@ -1,0 +1,177 @@
+/**
+ * A local HTTP server for replaying a WACZ in ReplayWeb.page.
+ *
+ * ReplayWeb.page reads a remote .wacz by fetching the ZIP central directory
+ * with range requests — including a suffix range (`Range: bytes=-N`) to find
+ * the end-of-central-directory record — then pulls individual entries. So it
+ * never downloads the whole archive, but it does need working ranges and CORS.
+ *
+ * In-process rather than spawning the behaviors skill's waczserve.py: this is
+ * about sixty lines, it drops the python3 dependency for replay, and the
+ * lifecycle is a `close()` rather than tracking a child process.
+ */
+
+import * as fs from "node:fs";
+import * as http from "node:http";
+import * as path from "node:path";
+
+export interface ReplayServer {
+  port: number;
+  /** Directory being served. */
+  dir: string;
+  url(file: string): string;
+  close(): Promise<void>;
+}
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "*",
+  "Accept-Ranges": "bytes",
+};
+
+/** `bytes=0-99`, `bytes=100-`, and the suffix form `bytes=-100`. */
+export function parseRange(header: string, size: number): { start: number; end: number } | undefined {
+  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!m) return undefined;
+  const [, rawStart = "", rawEnd = ""] = m;
+
+  if (rawStart === "" && rawEnd === "") return undefined;
+  if (rawStart === "") {
+    const len = Number.parseInt(rawEnd, 10);
+    if (!Number.isFinite(len) || len <= 0) return undefined;
+    return { start: Math.max(0, size - len), end: size - 1 };
+  }
+  const start = Number.parseInt(rawStart, 10);
+  if (!Number.isFinite(start) || start >= size) return undefined;
+  const end = rawEnd === "" ? size - 1 : Math.min(Number.parseInt(rawEnd, 10), size - 1);
+  if (end < start) return undefined;
+  return { start, end };
+}
+
+function contentType(file: string): string {
+  if (file.endsWith(".wacz")) return "application/wacz+zip";
+  if (file.endsWith(".json")) return "application/json";
+  return "application/octet-stream";
+}
+
+export async function serveDir(dir: string, preferredPort = 8087, attempts = 10): Promise<ReplayServer> {
+  const server = http.createServer((req, res) => {
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, CORS);
+      res.end();
+      return;
+    }
+
+    // Strip any query and refuse traversal: only files directly in dir.
+    const name = path.basename(decodeURIComponent((req.url ?? "/").split("?")[0]!));
+    const file = path.join(dir, name);
+    let size: number;
+    try {
+      const st = fs.statSync(file);
+      if (!st.isFile()) throw new Error("not a file");
+      size = st.size;
+    } catch {
+      res.writeHead(404, CORS);
+      res.end("not found");
+      return;
+    }
+
+    const headers = { ...CORS, "Content-Type": contentType(name) };
+    const rangeHeader = req.headers.range;
+    const range = rangeHeader ? parseRange(rangeHeader, size) : undefined;
+
+    if (rangeHeader && !range) {
+      res.writeHead(416, { ...headers, "Content-Range": `bytes */${size}` });
+      res.end();
+      return;
+    }
+
+    if (range) {
+      res.writeHead(206, {
+        ...headers,
+        "Content-Range": `bytes ${range.start}-${range.end}/${size}`,
+        "Content-Length": range.end - range.start + 1,
+      });
+      if (req.method === "HEAD") return res.end();
+      fs.createReadStream(file, { start: range.start, end: range.end }).pipe(res);
+      return;
+    }
+
+    res.writeHead(200, { ...headers, "Content-Length": size });
+    if (req.method === "HEAD") return res.end();
+    fs.createReadStream(file).pipe(res);
+  });
+
+  const port = await new Promise<number>((resolve, reject) => {
+    let tries = 0;
+
+    const onError = (err: NodeJS.ErrnoException) => {
+      // Someone else has the port — including a replay server left over from an
+      // earlier session — so walk up rather than failing.
+      if (err.code === "EADDRINUSE" && ++tries < attempts) {
+        // A failed listen() leaves its one-time `listening` callback
+        // registered. If it survives, it fires on the *next* successful bind
+        // and reports the port we could not have, which would hand the user a
+        // URL pointing at whatever else is on it.
+        server.removeAllListeners("listening");
+        server.once("listening", onListening);
+        server.listen(preferredPort + tries, "127.0.0.1");
+        return;
+      }
+      reject(err);
+    };
+
+    // The bound socket is the only trustworthy source for the port.
+    const onListening = () => {
+      server.off("error", onError);
+      const addr = server.address();
+      if (addr && typeof addr === "object") resolve(addr.port);
+      else reject(new Error("replay server bound to an unexpected address"));
+    };
+
+    server.on("error", onError);
+    server.once("listening", onListening);
+    server.listen(preferredPort, "127.0.0.1");
+  });
+
+  return {
+    port,
+    dir,
+    url: (file: string) => `https://replayweb.page/?source=http://localhost:${port}/${encodeURIComponent(file)}`,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+        // close() only stops accepting and then waits for open connections to
+        // end. A browser replaying an archive holds keep-alive sockets, so
+        // without this a session shutdown would block on them.
+        server.closeAllConnections();
+      }),
+  };
+}
+
+/**
+ * One server per directory, reused across calls and closed together at
+ * shutdown. Archives normally all live in the store's out/, so in practice this
+ * holds a single server; an adopted crawl replayed from elsewhere gets its own.
+ */
+export class ReplayServers {
+  private readonly servers = new Map<string, ReplayServer>();
+
+  async get(dir: string): Promise<ReplayServer> {
+    const existing = this.servers.get(dir);
+    if (existing) return existing;
+    const server = await serveDir(dir, 8087 + this.servers.size);
+    this.servers.set(dir, server);
+    return server;
+  }
+
+  running(): ReplayServer[] {
+    return [...this.servers.values()];
+  }
+
+  async closeAll(): Promise<void> {
+    const all = [...this.servers.values()];
+    this.servers.clear();
+    await Promise.all(all.map((s) => s.close()));
+  }
+}

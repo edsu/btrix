@@ -76,7 +76,9 @@ profiles stay out of version control while `config/` remains yours to commit.
 |---|---|
 | "crawl sulnews" | `btrix_run` starts `btrix/config/sulnews.yaml` detached, then the widget takes over |
 | "how's it going?" | `btrix_status` — but you usually won't need to ask, the widget is already showing it |
-| `/btrix [name]` | Repaint the widget by hand. No model turn |
+| "what do I have?" | `btrix_list` — configs, runs and their state, archives, failed runs, free space |
+| "replay stanford-news" | `btrix_view` serves the archive and hands you a ReplayWeb.page link |
+| `/btrix [name]` | Repaint the widget, or show the inventory, by hand. No model turn |
 
 The widget looks like this, repainting once a second:
 
@@ -86,8 +88,32 @@ btrix │ crawling mysite · 142/201 · 71% · 3.2 pg/min · 1.2M/min
       fetching https://example.org/news/some-page
 ```
 
-It states facts and leaves diagnosis alone: you get `no new page 4m`, never
-`stalled`. Stall detection is a heuristic with a timeout, and moving it out of
+The inventory is a table, not a paragraph:
+
+```
+configs
+  cultprotest        cultprotest.me/            page · limit 3
+  sulnews            library.stanford.edu/news  collection stanford-news · prefix · limit 25 · behavior load-more.js
+  toi                timesofisrael.com/         page · no wacz
+
+runs
+  sulnews            stopped       18/25     ended early — btrix_status for why
+
+archives
+  out/cultprotest.wacz      3.0M    3/3 pages · truncated at pageLimit 3 · crawler 1.14.3
+  out/stanford-news.wacz    40M     25/25 pages · crawler 1.14.3
+
+  1 failed run(s) 4.0K · 39G free
+```
+
+Every "interpret rather than restate" instruction the old plugin gave the model
+is a rule here instead: `state → next command` is a switch, "an archive with no
+matching config" is a set difference, "a leftover container" is a container
+lookup, and low free space is a threshold. A config that will produce no WACZ
+says so *before* you crawl with it rather than after.
+
+Both renderers state facts and leave diagnosis alone: you get `no new page 4m`,
+never `stalled`. Stall detection is a heuristic with a timeout, and moving it out of
 prose into TypeScript shouldn't launder a guess into certainty. Anything
 uncertain is carried by colour, not by adjective.
 
@@ -107,6 +133,9 @@ turn announcing the result.
 
 | Path | What |
 |---|---|
+| `src/inventory.ts` | "What do I have here?" as data: configs, runs, archives, orphans, free space |
+| `src/serve.ts` | Local replay server: HTTP ranges (including the suffix form) and CORS, in-process |
+| `src/config.ts` | The few config keys btrix needs, read line-wise rather than via a YAML dependency |
 | `src/store.ts` | Where files live: `--dir` / `$BTRIX_DIR` / `./btrix`, run directories, the `collection:` key |
 | `src/finish.ts` | Promotes a finished run into `out/`, or parks it in `failed/` |
 | `src/log.ts` | Pure parser for the crawler's JSON log lines. No fs, so it tests against fixtures |
@@ -119,6 +148,7 @@ turn announcing the result.
 | `scripts/run.sh` | The `docker run`. Stays shell so you can run a crawl by hand |
 | `test/fixtures/*.log` | Real crawl logs, so the parser is tested against what browsertrix actually emits |
 | `skills/behaviors/` | Writing and debugging custom crawl behaviors — carried over unchanged |
+| `skills/replay/` | Diagnosing replay failures: Chrome's local-network prompt, service workers, search |
 
 Container invocation stays in shell on purpose: its whole job is picking an
 engine and assembling flags, and a rewrite would only cost you a
@@ -129,7 +159,8 @@ earn it.
 
 ```bash
 npm install
-npm test          # 68 tests, no container or model needed
+npm test          # 94 tests, no container or model needed
+npm run btrix     # run it here; the store lands in ./btrix (gitignored)
 npm run check     # tsc --noEmit
 ```
 
@@ -153,6 +184,10 @@ EOF
 pi -e ~/Projects/btrix
 ```
 
+`npm run btrix` does the same from inside the repo, but only from there — `npm
+run` needs a `package.json` in the cwd or an ancestor, so a scratch crawl
+directory needs the `pi -e` form.
+
 Then ask it to crawl `example`, and check the things that are the whole point:
 
 - the widget repaints while the transcript shows **no new turns**;
@@ -160,14 +195,15 @@ Then ask it to crawl `example`, and check the things that are the whole point:
 - Ctrl+C during startup stops the container (`docker ps` comes back empty);
 - quitting pi leaves the crawl running, and reopening re-attaches the widget;
 - completion produces **one** model turn, plus a summary card;
-- the WACZ ends up in `btrix/out/` with its `.btrix.json` sidecar.
+- the WACZ ends up in `btrix/out/` with its `.btrix.json` sidecar;
+- `btrix_view` serves it and ReplayWeb.page replays it through the link.
 
 ## Status
 
-`run` and `status`, over a self-contained store. Not yet ported from the Claude
-Code plugin: `list`, `review`, `view`, `profile`, `new`.
-`skills/behaviors/scripts/waczserve.py` is still Python, so `python3` is needed
-for local replay serving.
+`run`, `status`, `list` and `view`, over a self-contained store. Not yet ported
+from the Claude Code plugin: `review`, `profile`, `new`. Replay serving is now
+in-process Node, so `python3` is only needed for the behaviors skill's own
+`waczserve.py` when debugging behaviors by hand.
 
 ## License
 

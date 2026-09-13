@@ -7,6 +7,8 @@
  * into certainty. Anything uncertain is carried by colour, not by adjective.
  */
 
+import type { Inventory } from "./inventory.ts";
+import { nextStep } from "./inventory.ts";
 import { humanBytes, humanDuration } from "./sizes.ts";
 import type { CrawlStats } from "./stats.ts";
 
@@ -153,5 +155,116 @@ export function renderForModel(s: CrawlStats): string {
   if (s.state === "stopped") parts.push("no container running and no wacz — the crawl ended early");
   if (s.lastProblem) parts.push(`last warning/error: ${s.lastProblem}`);
   if (s.windowMs < 30_000 && s.pagesPerMin !== undefined) parts.push("(rates based on <30s of history)");
+  return parts.join(" · ");
+}
+
+// ---------------------------------------------------------------------------
+// Inventory
+// ---------------------------------------------------------------------------
+
+const pad = (s: string, n: number) => (s.length >= n ? s : s + " ".repeat(n - s.length));
+
+/**
+ * The inventory as a table for the human. No model involved: this is the
+ * command whose entire old skill body was "interpret rather than restate".
+ */
+export function renderInventory(inv: Inventory, theme: ThemeLike = plainTheme): string[] {
+  const dim = (t: string) => theme.fg("dim", t);
+  const lines: string[] = [];
+  const rel = (p: string) => p.replace(`${inv.store.root}/`, "");
+
+  lines.push(theme.fg("accent", "btrix") + dim(`  store ${inv.store.root}`));
+
+  lines.push("");
+  lines.push(theme.fg("toolTitle", "configs"));
+  if (!inv.configs.length) lines.push(dim("  none yet — ask to create one"));
+  for (const c of inv.configs) {
+    const bits: string[] = [];
+    if (c.collection !== c.name) bits.push(`collection ${c.collection}`);
+    if (c.scopeType) bits.push(c.scopeType);
+    if (c.pageLimit) bits.push(`limit ${c.pageLimit}`);
+    if (c.behaviors.length) bits.push(`behavior ${c.behaviors.join(",")}`);
+    // A config that generates no WACZ cannot be replayed, which is worth
+    // knowing before the crawl rather than after.
+    if (!c.generateWacz) bits.push("no wacz");
+    const seed = (c.seed ?? "-").replace(/^https?:\/\//, "");
+    lines.push(`  ${pad(c.name, 18)} ${dim(pad(seed.slice(0, 40), 40))} ${dim(bits.join(" · "))}`);
+  }
+
+  if (inv.runs.length) {
+    lines.push("");
+    lines.push(theme.fg("toolTitle", "runs"));
+    for (const r of inv.runs) {
+      const s = r.stats;
+      const live = inv.running.includes(r.config);
+      const colour = s.state === "done" ? "success" : s.state === "stopped" ? "warning" : "accent";
+      const counts = s.total ? `${s.crawled}/${s.total}` : `${s.crawled}`;
+      const note = live ? "running" : nextStep(s.state);
+      lines.push(
+        `  ${pad(r.config, 18)} ${theme.fg(colour, pad(STATE_LABEL[s.state], 13))} ${dim(pad(counts, 9))} ${dim(note)}`,
+      );
+    }
+  }
+
+  lines.push("");
+  lines.push(theme.fg("toolTitle", "archives"));
+  if (!inv.archives.length) lines.push(dim("  none yet"));
+  for (const a of inv.archives) {
+    const p = a.provenance;
+    const bits: string[] = [];
+    if (p?.pages?.total) bits.push(`${p.pages.crawled}/${p.pages.total} pages`);
+    if (p?.limitHit) bits.push(`truncated at pageLimit ${p.pageLimit ?? "?"}`);
+    if (a.kind === "warc-dir") bits.push("warc directory, no wacz");
+    if (p?.crawler) bits.push(`crawler ${p.crawler}`);
+    lines.push(`  ${pad(rel(a.path), 30)} ${dim(pad(humanBytes(a.bytes), 7))} ${dim(bits.join(" · "))}`);
+  }
+
+  const tail: string[] = [];
+  if (inv.profiles.length) tail.push(`${inv.profiles.length} profile(s)`);
+  if (inv.failed.count) tail.push(theme.fg("warning", `${inv.failed.count} failed run(s) ${humanBytes(inv.failed.bytes)}`));
+  if (inv.free !== undefined) {
+    // The crawler aborts outright when the disk fills mid-crawl.
+    const low = inv.free < 5 * 1024 ** 3;
+    tail.push(theme.fg(low ? "error" : "dim", `${humanBytes(inv.free)} free`));
+  }
+  if (inv.legacyCollections.length) tail.push(`${inv.legacyCollections.length} crawl(s) in ./collections (outside the store)`);
+  if (tail.length) {
+    lines.push("");
+    lines.push("  " + tail.join(dim(" · ")));
+  }
+  if (inv.orphans.length) {
+    lines.push("  " + theme.fg("warning", `no matching config: ${inv.orphans.join(", ")}`));
+  }
+  return lines;
+}
+
+/** Compact inventory for the model: the same facts, without the table. */
+export function inventoryForModel(inv: Inventory): string {
+  const parts: string[] = [`store ${inv.store.root}`];
+
+  parts.push(
+    inv.configs.length
+      ? `configs: ${inv.configs.map((c) => (c.collection === c.name ? c.name : `${c.name}→${c.collection}`)).join(", ")}`
+      : "no configs yet",
+  );
+  if (inv.neverRun.length) parts.push(`never run: ${inv.neverRun.join(", ")}`);
+  for (const r of inv.runs) {
+    parts.push(`${r.config}: ${STATE_LABEL[r.stats.state]} ${r.stats.crawled}/${r.stats.total} — ${nextStep(r.stats.state)}`);
+  }
+  for (const a of inv.archives) {
+    const p = a.provenance;
+    parts.push(
+      `archive ${a.collection} ${humanBytes(a.bytes)}${a.kind === "warc-dir" ? " (warc dir, no wacz)" : ""}` +
+        (p?.limitHit ? " (truncated at pageLimit)" : ""),
+    );
+  }
+  if (inv.running.length) parts.push(`containers running: ${inv.running.join(", ")}`);
+  if (inv.failed.count) parts.push(`${inv.failed.count} failed run(s) taking ${humanBytes(inv.failed.bytes)}`);
+  if (inv.profiles.length) parts.push(`profiles: ${inv.profiles.map((p) => p.name).join(", ")}`);
+  if (inv.free !== undefined) parts.push(`${humanBytes(inv.free)} free`);
+  if (inv.legacyCollections.length) {
+    parts.push(`outside the store, in ./collections: ${inv.legacyCollections.join(", ")}`);
+  }
+  if (inv.orphans.length) parts.push(`no matching config: ${inv.orphans.join(", ")}`);
   return parts.join(" · ");
 }
