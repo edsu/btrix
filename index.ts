@@ -195,9 +195,12 @@ export default function (pi: ExtensionAPI) {
     await pi.exec(opener, [url], { timeout: 5_000 }).catch(() => undefined);
   };
 
-  pi.registerShortcut("ctrl+r", {
-    description: "btrix: open the replay link for the running replay server",
-    handler: async (ctx) => {
+  // Commands rather than key shortcuts: pi's built-ins occupy nearly every
+  // ctrl+letter, so binding one either steals a binding the user already has
+  // (ctrl+r is session rename) or is silently dropped as a conflict.
+  pi.registerCommand("replay", {
+    description: "Open the replay link for a served archive in your browser",
+    handler: async (args, ctx) => {
       const live = servers.running();
       if (!live.length) {
         ctx.ui.notify("No replay server running — ask to replay an archive first.", "info");
@@ -209,15 +212,18 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify("Nothing to replay in the served directory.", "warning");
         return;
       }
-      const file = archives.length === 1 ? archives[0]! : await ctx.ui.select("Replay which archive?", archives);
+      const asked = args.trim();
+      const named = asked ? archives.find((a) => a.startsWith(asked.replace(/\.wacz$/, ""))) : undefined;
+      const file =
+        named ?? (archives.length === 1 ? archives[0]! : await ctx.ui.select("Replay which archive?", archives));
       if (!file) return;
       await openUrl(server.url(file));
     },
   });
 
-  pi.registerShortcut("ctrl+g", {
-    description: "btrix: open the live crawl screencast",
-    handler: async (ctx) => {
+  pi.registerCommand("screencast", {
+    description: "Open the live crawl screencast in your browser",
+    handler: async (_args, ctx) => {
       if (!monitor.watched().length) {
         ctx.ui.notify("No crawl is running.", "info");
         return;

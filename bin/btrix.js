@@ -16,6 +16,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import * as os from "node:os";
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, "..");
 const TOOLS = "btrix_run,btrix_status,btrix_list,btrix_view,read,write,edit,bash";
@@ -40,6 +42,28 @@ function findPi() {
   }
   return { command: "pi", prefix: [] };
 }
+
+/**
+ * On a first run, quiet the harness's startup listing — the skills, extensions
+ * and resource inventory it prints, which means nothing to someone who
+ * installed a web archiving tool.
+ *
+ * Only when no settings file exists yet. Somebody who already uses pi has
+ * preferences of their own, and silently rewriting them would be rude.
+ */
+function quietFirstRun() {
+  try {
+    const dir = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");
+    const file = path.join(dir, "settings.json");
+    if (fs.existsSync(file)) return;
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, `${JSON.stringify({ quietStartup: true }, null, 2)}\n`);
+  } catch {
+    // A noisier startup is not worth failing to start over.
+  }
+}
+
+quietFirstRun();
 
 const systemPrompt = fs.readFileSync(path.join(PKG, "assets", "system-prompt.md"), "utf8");
 const { command, prefix } = findPi();

@@ -21,7 +21,10 @@ Claude, ChatGPT or Copilot subscription, or set an API key such as
 
 btrix is built on the [pi](https://pi.dev) agent harness, which comes along as a
 dependency. If you already use pi, load btrix as an extension instead with
-`pi install git:github.com/edsu/btrix`.
+`pi install git:github.com/edsu/btrix` — and note that pi will list its loaded
+skills and extensions at startup unless you set `"quietStartup": true` in
+`~/.pi/agent/settings.json` (or via `/settings`). A fresh btrix install sets
+that for you; an existing pi setup is left alone.
 
 ## Use
 
@@ -64,9 +67,9 @@ Keys and commands:
 | | |
 |---|---|
 | `@` | Completes config, collection, archive and profile names |
-| `ctrl+r` | Open the replay link for a served archive |
-| `ctrl+g` | Open the live crawl screencast |
 | `/btrix [name]` | Repaint the progress widget, or show the inventory |
+| `/replay [name]` | Open an archive in your browser |
+| `/screencast` | Watch the live crawl |
 | `/model`, `/login` | Switch model, add a provider |
 
 While a crawl runs, a widget updates once a second, and progress also appears in

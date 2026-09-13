@@ -103,19 +103,20 @@ describe("extension wiring", () => {
     expect(written).toContain("/model to change");
   });
 
-  it("registers shortcuts for the things you would otherwise hunt for", () => {
+  it("uses commands, not key shortcuts, for opening things", () => {
+    // pi's built-ins occupy nearly every ctrl+letter: ctrl+r is session
+    // rename, so binding it stole a binding, and ctrl+g was dropped as a
+    // conflict and did nothing at all.
     const s = stubApi();
     extension(s.api);
-    // Opening a replay link or the live screencast should not need copying a
-    // url out of the transcript.
-    expect([...s.shortcuts.keys()].sort()).toEqual(["ctrl+g", "ctrl+r"]);
-    for (const opts of s.shortcuts.values()) expect(opts.description).toContain("btrix");
+    expect([...s.shortcuts.keys()]).toEqual([]);
+    expect([...s.commands.keys()].sort()).toEqual(["btrix", "replay", "screencast"]);
   });
 
   it("registers the command, the summary renderer and the lifecycle handlers", () => {
     const s = stubApi();
     extension(s.api);
-    expect([...s.commands.keys()]).toEqual(["btrix"]);
+    expect([...s.commands.keys()].sort()).toEqual(["btrix", "replay", "screencast"]);
     expect([...s.entryRenderers.keys()]).toEqual(["btrix-summary"]);
     expect([...s.events.keys()].sort()).toEqual([
       "model_select",

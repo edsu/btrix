@@ -574,9 +574,9 @@ export function startupLines(info: StartupInfo, theme: ThemeLike = plainTheme): 
     "  " +
       [
         dim("/btrix for the inventory"),
+        dim("/replay to open an archive"),
         dim("@ completes names"),
-        dim("/model changes model"),
-        dim("/help for keys"),
+        dim("/help for more"),
       ].join(sep),
   );
   return lines;
