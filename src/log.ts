@@ -37,6 +37,10 @@ export interface LogFacts {
   pagesFinished: number;
   /** Crawler's own timestamp on the most recent "Page Finished". */
   lastPageFinishedAt?: string;
+  /** `pageLimit` from the config, as the crawler reports it. */
+  pageLimit?: number;
+  /** The crawl stopped because it hit `pageLimit`, so it is not complete. */
+  limitHit: boolean;
   /** Counted from the `message` field only — see note in `foldLine`. */
   rateLimited: number;
   warnings: number;
@@ -59,6 +63,7 @@ export function emptyFacts(): LogFacts {
     pending: 0,
     pendingPages: [],
     pagesFinished: 0,
+    limitHit: false,
     rateLimited: 0,
     warnings: 0,
     errors: 0,
@@ -122,12 +127,21 @@ export function foldLine(acc: LogFacts, raw: string): LogFacts {
   // timestamp containing that text.
   if (/rate limit/i.test(message)) acc.rateLimited++;
 
-  if (d.logLevel === "warn") {
-    acc.warnings++;
-    acc.lastProblem = message;
-  } else if (d.logLevel === "error" || d.logLevel === "fatal") {
-    acc.errors++;
-    acc.lastProblem = message;
+  // The crawler warns about redis while it waits for its own state store to
+  // come up, every single run. Reporting that as the crawl's "last problem"
+  // puts a fault in front of the user where there is none. Suppressed only
+  // before the crawl starts: redis trouble mid-crawl is real.
+  const benignStartup =
+    acc.phase === "starting" && (d.context === "redis" || d.context === "state" || /waiting for redis/i.test(message));
+
+  if (!benignStartup) {
+    if (d.logLevel === "warn") {
+      acc.warnings++;
+      acc.lastProblem = message;
+    } else if (d.logLevel === "error" || d.logLevel === "fatal") {
+      acc.errors++;
+      acc.lastProblem = message;
+    }
   }
 
   switch (d.context) {
@@ -138,6 +152,13 @@ export function foldLine(acc: LogFacts, raw: string): LogFacts {
       acc.excluded = num(details.excluded) ?? acc.excluded;
       acc.pending = num(details.pending) ?? acc.pending;
       acc.pendingPages = parsePendingPages(details.pendingPages);
+      const limit = details.limit as { max?: unknown; hit?: unknown } | undefined;
+      if (limit) {
+        const max = num(limit.max);
+        // max: 0 means unlimited.
+        acc.pageLimit = max && max > 0 ? max : undefined;
+        if (limit.hit === true) acc.limitHit = true;
+      }
       if (acc.phase === "starting") acc.phase = "crawling";
       break;
     }

@@ -89,3 +89,61 @@ describe("robustness", () => {
     expect(f.phase).toBe("crawling");
   });
 });
+
+describe("noise observed in a real run", () => {
+  // Every run emits these two before the crawler's own state store is up.
+  // Counting them made a healthy crawl report "last problem: Waiting for
+  // redis…", which reads as a fault.
+  const REDIS_CHATTER = [
+    JSON.stringify({
+      timestamp: "2026-09-13T11:36:02.130Z",
+      logLevel: "warn",
+      context: "redis",
+      message: "ioredis error",
+      details: { error: "[ioredis] Unhandled error event:" },
+    }),
+    JSON.stringify({
+      timestamp: "2026-09-13T11:36:02.130Z",
+      logLevel: "warn",
+      context: "state",
+      message: "Waiting for redis at redis://localhost:6379/0",
+      details: {},
+    }),
+  ];
+
+  it("does not report startup redis chatter as a problem", () => {
+    const f = foldLines(REDIS_CHATTER);
+    expect(f.warnings).toBe(0);
+    expect(f.lastProblem).toBeUndefined();
+  });
+
+  it("still reports redis trouble once the crawl is under way", () => {
+    const f = foldLines([
+      JSON.stringify({ context: "crawlStatus", message: "Crawl statistics", details: { crawled: 1, total: 4 } }),
+      ...REDIS_CHATTER,
+    ]);
+    expect(f.warnings).toBe(2);
+    expect(f.lastProblem).toContain("Waiting for redis");
+  });
+
+  it("records a hit page limit, which makes a crawl truncated rather than complete", () => {
+    const line = (hit: boolean) =>
+      JSON.stringify({
+        context: "crawlStatus",
+        message: "Crawl statistics",
+        details: { crawled: 3, total: 3, limit: { max: 3, hit } },
+      });
+    expect(foldLines([line(false)]).limitHit).toBe(false);
+    const f = foldLines([line(false), line(true)]);
+    expect(f.limitHit).toBe(true);
+    expect(f.pageLimit).toBe(3);
+  });
+
+  it("treats an unlimited page limit as no limit", () => {
+    const f = foldLines([
+      JSON.stringify({ context: "crawlStatus", message: "Crawl statistics", details: { crawled: 1, total: 1, limit: { max: 0, hit: false } } }),
+    ]);
+    expect(f.pageLimit).toBeUndefined();
+    expect(f.limitHit).toBe(false);
+  });
+});

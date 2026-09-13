@@ -42,6 +42,8 @@ export interface CrawlStats {
   failed: number;
   excluded: number;
   rateLimited: number;
+  pageLimit?: number;
+  limitHit: boolean;
   warnings: number;
   errors: number;
   lastProblem?: string;
@@ -198,6 +200,8 @@ export class CrawlTailer {
       failed: f.failed,
       excluded: f.excluded,
       rateLimited: f.rateLimited,
+      pageLimit: f.pageLimit,
+      limitHit: f.limitHit,
       warnings: f.warnings,
       errors: f.errors,
       lastProblem: f.lastProblem,

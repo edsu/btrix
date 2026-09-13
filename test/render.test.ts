@@ -13,6 +13,7 @@ const stats = (over: Partial<CrawlStats> = {}): CrawlStats => ({
   failed: 0,
   excluded: 0,
   rateLimited: 0,
+  limitHit: false,
   warnings: 0,
   errors: 0,
   pending: [],

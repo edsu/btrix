@@ -94,6 +94,7 @@ export function renderWidget(s: CrawlStats, theme: ThemeLike = plainTheme): stri
         : "";
     detail.push(theme.fg(tight ? "error" : "dim", `${humanBytes(s.free)} free${eta}`));
   }
+  if (s.limitHit) detail.push(theme.fg("warning", `stopped at pageLimit ${s.pageLimit ?? "?"}`));
   if (s.rateLimited) detail.push(theme.fg("warning", `rate-limited ${s.rateLimited}`));
   if (s.failed) detail.push(theme.fg("warning", `failed ${s.failed}`));
   if (s.errors) detail.push(theme.fg("error", `errors ${s.errors}`));
@@ -131,6 +132,7 @@ export function renderForModel(s: CrawlStats): string {
   if (isLive(s) && s.diskFullIn !== undefined && s.diskFullIn < 6 * 3600_000) {
     parts.push(`disk full in ~${humanDuration(s.diskFullIn)} at current rate`);
   }
+  if (s.limitHit) parts.push(`stopped at pageLimit ${s.pageLimit ?? "?"}, so the crawl is truncated, not complete`);
   if (s.failed) parts.push(`failed ${s.failed}`);
   if (s.rateLimited) parts.push(`rate-limited ${s.rateLimited}`);
   if (s.errors) parts.push(`errors ${s.errors}`);
