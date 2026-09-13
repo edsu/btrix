@@ -25,11 +25,22 @@ import {
 import { applyClean, type CleanTarget, planClean } from "./clean.ts";
 import { buildInventory } from "./inventory.ts";
 import type { CrawlMonitor, WatchTarget } from "./monitor.ts";
+import type { Inventory } from "./inventory.ts";
 import { analyzePages, type PagesReport, readPages } from "./pages.ts";
 import { CONTAINER_PROFILES, findProfile, listProfiles, safeProfileName } from "./profile.ts";
-import { inventoryForModel, isLive, renderForModel, reviewForModel } from "./render.ts";
+import {
+  inventoryForModel,
+  isLive,
+  renderForModel,
+  renderInventory,
+  renderReview,
+  renderWidget,
+  reviewForModel,
+} from "./render.ts";
 import type { ReplayServers } from "./serve.ts";
+import { linesComponent } from "./tui.ts";
 import { humanBytes } from "./sizes.ts";
+import type { CrawlStats } from "./stats.ts";
 import { activeRun, collectionFor, ensureStore, prepareRun, type Store } from "./store.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -135,6 +146,14 @@ export function createTools(
     parameters: Type.Object({
       config: Type.String({ description: "Config name in the store's config/ directory, without the .yaml extension" }),
     }),
+    renderCall(args, theme) {
+      return linesComponent([`${theme.fg("accent", "crawl")} ${theme.fg("text", normalizeName(String(args.config ?? "?")))}`]);
+    },
+    renderResult(result, _options, theme) {
+      const stats = result.details as CrawlStats | undefined;
+      if (!stats?.name) return linesComponent(result.content.map((c: any) => String(c.text ?? "")));
+      return linesComponent(renderWidget(stats, theme));
+    },
     async execute(_id, params, signal, onUpdate) {
       const store = getStore();
       const config = normalizeName(String(params.config));
@@ -243,6 +262,11 @@ export function createTools(
         Type.String({ description: "Config or collection name. Defaults to the only running or watched crawl." }),
       ),
     }),
+    renderResult(result, _options, theme) {
+      const stats = result.details as CrawlStats | undefined;
+      if (!stats?.name) return linesComponent(result.content.map((c: any) => String(c.text ?? "")));
+      return linesComponent(renderWidget(stats, theme));
+    },
     async execute(_id, params) {
       const store = getStore();
       const legacy = getLegacy();
@@ -284,6 +308,13 @@ export function createTools(
       "and free space. Use it to find a name you were not given, or to answer what the user has.",
     promptSnippet: "List btrix configs, crawls and archives",
     parameters: Type.Object({}),
+    renderResult(result, _options, theme) {
+      const inv = result.details as Inventory | undefined;
+      // The table was already built for the widget; render it rather than
+      // handing a prose version of it to the model to read back.
+      if (!inv?.store) return linesComponent(result.content.map((c: any) => String(c.text ?? "")));
+      return linesComponent(renderInventory(inv, theme));
+    },
     async execute() {
       const inv = await buildInventory(getStore(), getLegacy());
       return { content: [{ type: "text", text: inventoryForModel(inv) }], details: inv };
@@ -300,6 +331,18 @@ export function createTools(
     parameters: Type.Object({
       name: Type.Optional(Type.String({ description: "Collection or config name. Defaults to the only archive." })),
     }),
+    renderResult(result, options, theme) {
+      const d = result.details as { url?: string; port?: number } | undefined;
+      if (!d?.url) return linesComponent(result.content.map((c: any) => String(c.text ?? "")));
+      const lines = [theme.fg("mdLink", d.url), theme.fg("dim", `served on port ${d.port}`)];
+      // The Chrome permission caveat is long; keep it for the expanded view.
+      if (options.expanded) {
+        lines.push(...result.content.map((c: any) => theme.fg("dim", String(c.text ?? ""))));
+      } else {
+        lines.push(theme.fg("dim", "Chrome may ask for local network permission on first load — click Allow"));
+      }
+      return linesComponent(lines);
+    },
     async execute(_id, params) {
       if (!servers) return text("Replay is unavailable: no server manager was wired up.");
       const store = getStore();
@@ -382,6 +425,11 @@ export function createTools(
     parameters: Type.Object({
       name: Type.Optional(Type.String({ description: "Config or collection name. Defaults to the only crawl." })),
     }),
+    renderResult(result, _options, theme) {
+      const d = result.details as { report?: PagesReport; stats?: CrawlStats } | undefined;
+      if (!d?.report) return linesComponent(result.content.map((c: any) => String(c.text ?? "")));
+      return linesComponent(renderReview(d.stats?.name ?? "crawl", d.report, theme));
+    },
     async execute(_id, params) {
       const store = getStore();
       const legacy = getLegacy();

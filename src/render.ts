@@ -420,3 +420,60 @@ export function startupLines(info: StartupInfo, theme: ThemeLike = plainTheme): 
   }
   return lines;
 }
+
+/**
+ * The review for the human. Same facts as `reviewForModel`, but colour carries
+ * the severity and the open questions stay phrased as questions — a candidate
+ * list is not a verdict, and the rendering should not imply otherwise.
+ */
+export function renderReview(name: string, r: PagesReport, theme: ThemeLike = plainTheme): string[] {
+  const dim = (t: string) => theme.fg("dim", t);
+  const lines: string[] = [
+    `${theme.fg("text", name)} ${dim(`${r.total} pages · ${r.seedPages} seed · ${r.extraPages} discovered`)}`,
+  ];
+
+  if (!r.hasText) {
+    lines.push(theme.fg("warning", "  no page text captured — crawled without text: to-pages"));
+    lines.push(dim("  interstitials cannot be detected, and replay will not be searchable"));
+  } else {
+    const skewed =
+      r.maxTextLength !== undefined &&
+      r.medianTextLength !== undefined &&
+      r.maxTextLength > 10 * Math.max(1, r.medianTextLength);
+    lines.push(
+      `  ${dim(`page text: median ${r.medianTextLength}, longest ${r.maxTextLength} chars`)}` +
+        (skewed ? theme.fg("warning", "  ← wide spread: most pages may hold no real content") : ""),
+    );
+    if (r.emptyText) lines.push(theme.fg("warning", `  ${r.emptyText} page(s) captured no text at all`));
+    if (r.thinPages.length) {
+      lines.push(
+        theme.fg("warning", `  ${r.thinPages.length}${r.truncated ? "+" : ""} page(s) under ${r.thinThreshold} chars`) +
+          dim(" — content, or a block page?"),
+      );
+      for (const p of r.thinPages.slice(0, 5)) {
+        lines.push(dim(`      ${p.textLength} chars · ${p.title ?? "(no title)"} · ${p.url}`));
+      }
+    }
+  }
+
+  for (const t of r.repeatedTitles.slice(0, 3)) {
+    lines.push(theme.fg("warning", `  ${t.count}× "${t.title}"`) + dim(" — interstitial, or a templated site?"));
+  }
+
+  if (r.notOk.length) {
+    lines.push(theme.fg("error", `  ${r.notOk.length} non-2xx page(s)`));
+    for (const p of r.notOk.slice(0, 3)) lines.push(dim(`      ${p.status} ${p.url}`));
+  }
+  if (r.hosts.length > 1) {
+    lines.push(
+      theme.fg("warning", `  ${r.hosts.length} hosts`) +
+        dim(` (seed ${r.seedHost ?? "?"}) — was the scope wider than intended?`),
+    );
+  }
+  if (r.partialLoads.length) {
+    lines.push(dim(`  ${r.partialLoads.length} page(s) did not fully load`));
+  }
+  const other = r.mimes.filter((m) => m.value !== "text/html");
+  if (other.length) lines.push(dim(`  non-html: ${other.map((m) => `${m.value}×${m.count}`).join(" ")}`));
+  return lines;
+}

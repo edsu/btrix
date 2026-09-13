@@ -15,6 +15,7 @@ import { Box, Text } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { finishRun, type Outcome } from "./src/finish.ts";
 import { CrawlMonitor, type WatchTarget } from "./src/monitor.ts";
+import { notifyDesktop } from "./src/notify.ts";
 import { renderForModel, renderInventory, renderWidget, startupLines } from "./src/render.ts";
 import { ReplayServers } from "./src/serve.ts";
 import { humanBytes } from "./src/sizes.ts";
@@ -42,6 +43,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   const cwd = process.cwd();
+  // Only rewritten when it changes: the title costs an escape sequence a paint.
+  let lastTitle = "";
   // Resolved once the CLI has parsed --dir, at session_start.
   let store: Store = resolveStore({ cwd });
   let legacy = legacyRoot(cwd);
@@ -53,6 +56,16 @@ export default function (pi: ExtensionAPI) {
       const ctx = ctxRef;
       if (!ctx?.hasUI) return;
       ctx.ui.setWidget(widgetKey(target.config), renderWidget(stats, ctx.ui.theme));
+
+      // Progress in the terminal title, so a long crawl is legible from a
+      // backgrounded tab without switching to it.
+      const title = stats.total
+        ? `btrix - ${target.collection} ${stats.crawled}/${stats.total}`
+        : `btrix - ${target.collection} ${stats.crawled} pages`;
+      if (title !== lastTitle) {
+        lastTitle = title;
+        ctx.ui.setTitle(title);
+      }
     },
     async onComplete(stats, target) {
       const ctx = ctxRef;
@@ -73,6 +86,18 @@ export default function (pi: ExtensionAPI) {
 
       // Custom entries do not enter LLM context, so the card costs nothing.
       pi.appendEntry<SummaryCard>("btrix-summary", { stats, outcome });
+
+      // A crawl that ran for hours finishes into a window nobody is watching.
+      notifyDesktop(
+        outcome.kind === "promoted" ? `Crawl finished: ${stats.name}` : `Crawl ended: ${stats.name}`,
+        outcome.kind === "promoted"
+          ? `${stats.crawled} pages, ${humanBytes(stats.bytes.wacz ?? stats.bytes.archive)}`
+          : outcome.message,
+      );
+      if (ctx?.hasUI) {
+        lastTitle = "btrix";
+        ctx.ui.setTitle("btrix");
+      }
 
       // One message, one turn: the model announces the result and can offer a
       // review. This replaces Claude Code's background-task completion
@@ -250,6 +275,7 @@ export default function (pi: ExtensionAPI) {
     ctxRef?.ui.setWidget("btrix:startup", undefined);
     ctxRef?.ui.setStatus("btrix-replay", undefined);
     ctxRef?.ui.setStatus("btrix", undefined);
+    ctxRef?.ui.setTitle("pi");
     monitor.dispose();
     // Crawls are left running on purpose; replay servers are not.
     await servers.closeAll();
