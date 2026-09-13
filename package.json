@@ -1,0 +1,30 @@
+{
+  "name": "btrix",
+  "version": "0.1.0",
+  "description": "Drive Browsertrix Crawler from pi: typed crawl tools and a live progress widget",
+  "license": "MIT",
+  "author": "Ed Summers",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "."
+    ],
+    "skills": [
+      "skills"
+    ]
+  },
+  "dependencies": {
+    "@earendil-works/pi-tui": "^0.85.1",
+    "typebox": "^1.3.27"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@types/node": "^24.13.4",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "check": "tsc --noEmit"
+  }
+}

@@ -1,0 +1,13 @@
+node_modules/
+
+# Crawl working-directory contents, in case you run a crawl from inside the
+# repo. No trailing slashes: these are often symlinked elsewhere, and a
+# trailing slash would only match a real directory.
+collections
+config
+profiles
+tmp
+.btrix
+*.wacz
+
+.DS_Store

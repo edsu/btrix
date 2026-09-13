@@ -1,0 +1,18 @@
+{"timestamp":"2026-08-01T15:03:46.760Z","logLevel":"info","context":"general","message":"Browsertrix-Crawler 1.14.1 (with warcio.js 2.4.11)","details":{}}
+{"timestamp":"2026-08-01T15:03:46.762Z","logLevel":"info","context":"general","message":"Seeds","details":{"firstSeed":{"url":"https://cultprotest.me/","normUrl":"https://cultprotest.me/","scopeType":"page","include":["/^https?:\\/\\/(www[\\d]*\\.)?cultprotest\\.me\\/$/"],"exclude":[],"allowHash":true,"depth":-1,"sitemap":null,"auth":null,"_authEncoded":null,"maxExtraHops":0,"maxDepth":0},"seedCount":1}}
+{"timestamp":"2026-08-01T15:03:46.762Z","logLevel":"info","context":"general","message":"Link Selectors","details":[{"selector":"a[href]","extract":"href","isAttribute":false}]}
+{"timestamp":"2026-08-01T15:03:46.762Z","logLevel":"info","context":"general","message":"Behavior Options","details":{"message":"{\"autoplay\":true,\"autofetch\":true,\"autoscroll\":true,\"siteSpecific\":true,\"log\":\"__bx_log\",\"startEarly\":true,\"clickSelector\":\"a\"}"}}
+{"timestamp":"2026-08-01T15:03:48.315Z","logLevel":"info","context":"worker","message":"Creating 1 workers","details":{}}
+{"timestamp":"2026-08-01T15:03:48.316Z","logLevel":"info","context":"worker","message":"Worker starting","details":{"workerid":0}}
+{"timestamp":"2026-08-01T15:03:48.522Z","logLevel":"info","context":"worker","message":"Starting page","details":{"workerid":0,"page":"https://cultprotest.me/"}}
+{"timestamp":"2026-08-01T15:03:48.524Z","logLevel":"info","context":"crawlStatus","message":"Crawl statistics","details":{"crawled":0,"total":1,"pending":1,"failed":0,"excluded":0,"limit":{"max":0,"hit":false},"pendingPages":["{\"seedId\":0,\"started\":\"2026-08-01T15:03:48.318Z\",\"extraHops\":0,\"url\":\"https:\\/\\/cultprotest.me\\/\",\"added\":\"2026-08-01T15:03:46.793Z\",\"depth\":0}"]}}
+{"timestamp":"2026-08-01T15:03:48.754Z","logLevel":"info","context":"general","message":"Awaiting page load","details":{"page":"https://cultprotest.me/","workerid":0}}
+{"timestamp":"2026-08-01T15:03:58.758Z","logLevel":"warn","context":"general","message":"Page load timed out, loading but slowly, skipping behaviors","details":{"msg":"Navigation timeout of 10000 ms exceeded","page":"https://cultprotest.me/","workerid":0}}
+{"timestamp":"2026-08-01T15:04:01.295Z","logLevel":"warn","context":"behavior","message":"Skipping behaviors for slow page","details":{"page":"https://cultprotest.me/","workerid":0}}
+{"timestamp":"2026-08-01T15:04:01.299Z","logLevel":"info","context":"pageStatus","message":"Page Finished","details":{"loadState":3,"page":"https://cultprotest.me/","workerid":0}}
+{"timestamp":"2026-08-01T15:04:01.304Z","logLevel":"info","context":"worker","message":"Worker done, all tasks complete","details":{"workerid":0}}
+{"timestamp":"2026-08-01T15:04:01.370Z","logLevel":"info","context":"crawlStatus","message":"Crawl statistics","details":{"crawled":1,"total":1,"pending":0,"failed":0,"excluded":0,"limit":{"max":0,"hit":false},"pendingPages":[]}}
+{"timestamp":"2026-08-01T15:04:01.371Z","logLevel":"info","context":"general","message":"Crawling done","details":{}}
+{"timestamp":"2026-08-01T15:04:01.371Z","logLevel":"info","context":"general","message":"Merging CDX","details":{}}
+{"timestamp":"2026-08-01T15:04:01.376Z","logLevel":"info","context":"general","message":"Generating WACZ","details":{}}
+{"timestamp":"2026-08-01T15:04:01.377Z","logLevel":"info","context":"general","message":"Num WARC Files: 1","details":{}}
