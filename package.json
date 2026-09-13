@@ -1,7 +1,7 @@
 {
   "name": "btrix",
   "version": "0.1.0",
-  "description": "Drive Browsertrix Crawler from pi: typed crawl tools and a live progress widget",
+  "description": "Make high-fidelity web archives with Browsertrix Crawler, by describing what you want archived",
   "license": "MIT",
   "author": "Ed Summers",
   "type": "module",
@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.85.1",
-    "@earendil-works/pi-tui": "^0.85.1",
+    "@earendil-works/pi-tui": "0.85.1",
     "typebox": "^1.3.27"
   },
   "devDependencies": {
@@ -26,7 +26,8 @@
   "scripts": {
     "test": "vitest run",
     "check": "tsc --noEmit",
-    "btrix": "pi -e ."
+    "btrix": "pi -e .",
+    "prepublishOnly": "npm run check && npm test"
   },
   "bin": {
     "btrix": "./bin/btrix.js"

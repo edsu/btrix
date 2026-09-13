@@ -14,8 +14,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import * as os from "node:os";
-
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, "..");
 
@@ -23,6 +21,9 @@ const PKG = path.resolve(HERE, "..");
 // cannot drift out of date the way it did.
 const { ALL_TOOLS } = await import(path.join(PKG, "src", "toolnames.ts"));
 const TOOLS = ALL_TOOLS.join(",");
+
+const { resolveAgentDir } = await import(path.join(PKG, "src", "agentdir.ts"));
+const AGENT_DIR = resolveAgentDir();
 
 /**
  * Prefer the pi we were installed with, so a btrix release is pinned to a pi it
@@ -46,19 +47,19 @@ function findPi() {
 }
 
 /**
- * On a first run, quiet the harness's startup listing — the skills, extensions
- * and resource inventory it prints, which means nothing to someone who
- * installed a web archiving tool.
+ * Quiet the harness's startup listing — the skills, extensions and resource
+ * inventory it prints, which means nothing to someone who installed a web
+ * archiving tool.
  *
- * Only when no settings file exists yet. Somebody who already uses pi has
- * preferences of their own, and silently rewriting them would be rude.
+ * Only when no settings file exists yet, so an edited one is never rewritten.
+ * Since btrix has its own agent directory, this is its own preference to set
+ * and not a change to anybody's pi configuration.
  */
 function quietFirstRun() {
   try {
-    const dir = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");
-    const file = path.join(dir, "settings.json");
+    const file = path.join(AGENT_DIR, "settings.json");
     if (fs.existsSync(file)) return;
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(AGENT_DIR, { recursive: true });
     fs.writeFileSync(file, `${JSON.stringify({ quietStartup: true }, null, 2)}\n`);
   } catch {
     // A noisier startup is not worth failing to start over.
@@ -81,7 +82,11 @@ const args = [
   ...process.argv.slice(2),
 ];
 
-const child = spawn(command, args, { stdio: "inherit" });
+const child = spawn(command, args, {
+  stdio: "inherit",
+  // Keep credentials, preferences and history under btrix's own directory.
+  env: { ...process.env, PI_CODING_AGENT_DIR: AGENT_DIR },
+});
 
 child.on("error", (err) => {
   if (err.code === "ENOENT" && command === "pi") {

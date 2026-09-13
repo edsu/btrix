@@ -21,12 +21,15 @@ On first run btrix asks you to connect a language model: type `/login` for a
 Claude, ChatGPT or Copilot subscription, or set an API key such as
 `ANTHROPIC_API_KEY`. Crawling itself needs no account.
 
-btrix is built on the [pi](https://pi.dev) agent harness, which comes along as a
-dependency. If you already use pi, load btrix as an extension instead with
-`pi install git:github.com/edsu/btrix` — and note that pi will list its loaded
-skills and extensions at startup unless you set `"quietStartup": true` in
-`~/.pi/agent/settings.json` (or via `/settings`). A fresh btrix install sets
-that for you; an existing pi setup is left alone.
+Your model credential and btrix's own preferences live in `~/.btrix`, kept
+apart from anything else on the machine. Point `BTRIX_AGENT_DIR` somewhere else
+to move them — including at `~/.pi/agent`, if you already use
+[pi](https://pi.dev) and would rather share one login.
+
+btrix is built on the pi agent harness, which comes along as a dependency; you
+do not need to install or know anything about it. If you already use pi, you
+can load btrix as an extension instead with
+`pi install git:github.com/edsu/btrix`.
 
 ## Use
 
