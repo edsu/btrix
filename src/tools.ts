@@ -14,7 +14,15 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { isCrawlRunning, killContainers, killCrawl, runningCrawls, runningProfileCaptures } from "./engine.ts";
+import {
+  engineStatus,
+  isCrawlRunning,
+  killContainers,
+  runningCrawls,
+  runningProfileCaptures,
+  stopCrawl,
+} from "./engine.ts";
+import { applyClean, type CleanTarget, planClean } from "./clean.ts";
 import { buildInventory } from "./inventory.ts";
 import type { CrawlMonitor, WatchTarget } from "./monitor.ts";
 import { analyzePages, type PagesReport, readPages } from "./pages.ts";
@@ -130,6 +138,10 @@ export function createTools(
     async execute(_id, params, signal, onUpdate) {
       const store = getStore();
       const config = normalizeName(String(params.config));
+
+      const engine = await engineStatus();
+      if (!engine.usable) return text(engine.problem ?? "No container engine available.");
+
       ensureStore(store);
 
       const file = configPath(store, config);
@@ -182,7 +194,8 @@ export function createTools(
 
       while (Date.now() < deadline) {
         if (signal?.aborted) {
-          await killCrawl(config);
+          // Graceful even here: the crawler may already have written something.
+          await stopCrawl(config, 10);
           return text(`Cancelled; stopped the ${config} crawl. Partial output is in ${runDir}.`);
         }
         const stats = await monitor.stats(target);
@@ -579,5 +592,110 @@ export function createTools(
     },
   });
 
-  return [runTool, statusTool, listTool, viewTool, reviewTool, profileTool];
+  const stopTool = defineTool({
+    name: "btrix_stop",
+    label: "Stop crawl",
+    description:
+      "Stop a running crawl. The crawler is asked to shut down and given time to close its files, so whatever " +
+      "it captured so far stays usable and is kept. Use when a crawl is taking far longer than intended, is " +
+      "being rate-limited hard, or was started with the wrong scope.",
+    promptSnippet: "Stop a running Browsertrix crawl",
+    parameters: Type.Object({
+      name: Type.Optional(Type.String({ description: "Config name. Defaults to the only running crawl." })),
+    }),
+    async execute(_id, params) {
+      const running = (await runningCrawls()).map((c) => c.config).filter((n): n is string => !!n);
+      if (!running.length) return text("No crawl is running.");
+
+      let name = params.name ? normalizeName(String(params.name)) : undefined;
+      if (!name) {
+        if (running.length > 1) {
+          return text(`Several crawls are running: ${running.join(", ")}. Say which one to stop.`);
+        }
+        name = running[0];
+      }
+      if (!running.includes(name!)) {
+        return text(`${name} is not running. Currently running: ${running.join(", ")}`);
+      }
+
+      const stopped = await stopCrawl(name!);
+      if (!stopped) return text(`Could not stop ${name}; it may have finished on its own.`);
+      return text(
+        `Stopped ${name}. The crawler was given time to close its files, so the pages it had already captured ` +
+          "are intact — btrix will report where they ended up once the container exits.",
+      );
+    },
+  });
+
+  const cleanTool = defineTool({
+    name: "btrix_clean",
+    label: "Reclaim space",
+    description:
+      "Report, and optionally delete, the working directories left behind by finished and failed crawls. " +
+      "Never touches archives, configs or profiles. Reports by default: call again with remove set to true " +
+      "only after the user has seen the list and agreed.",
+    promptSnippet: "Reclaim space from old crawl working directories",
+    parameters: Type.Object({
+      // Plain string rather than an enum: the enum helper lives in a package
+      // that is only a transitive dependency here, and the value is validated
+      // below anyway.
+      what: Type.Optional(
+        Type.String({ description: 'One of "failed" (default), "runs", or "both"' }),
+      ),
+      olderThanDays: Type.Optional(Type.Number({ description: "Only consider directories older than this" })),
+      remove: Type.Optional(Type.Boolean({ description: "Actually delete. Defaults to false: report only." })),
+    }),
+    async execute(_id, params) {
+      const store = getStore();
+      const asked = params.what ? String(params.what) : "failed";
+      if (!["failed", "runs", "both"].includes(asked)) {
+        return text(`"${asked}" is not one of failed, runs, both.`);
+      }
+      const plan = await planClean(store, {
+        what: asked as CleanTarget,
+        olderThanDays: typeof params.olderThanDays === "number" ? params.olderThanDays : undefined,
+      });
+
+      if (!plan.candidates.length) {
+        const kept = plan.kept.length ? ` ${plan.kept.length} kept: ${plan.kept.map((k) => k.keptBecause).join("; ")}.` : "";
+        return text(`Nothing to reclaim.${kept}`);
+      }
+
+      const listing = plan.candidates
+        .map((c) => `  ${path.basename(c.path)} · ${c.kind} · ${humanBytes(c.bytes)} · ${c.ageDays}d old`)
+        .join("\n");
+
+      if (!params.remove) {
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `${plan.candidates.length} directory(ies) holding ${humanBytes(plan.totalBytes)} could be removed:\n` +
+                `${listing}\n\n` +
+                (plan.kept.length ? `Keeping ${plan.kept.length}: ${plan.kept.map((k) => k.keptBecause).join("; ")}.\n` : "") +
+                "Archives, configs and profiles are never touched. Nothing has been deleted — show the user this " +
+                "list and ask before calling again with remove.",
+            },
+          ],
+          details: plan,
+        };
+      }
+
+      const { removed, refused } = await applyClean(store, plan);
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              `Removed ${removed.length} directory(ies), reclaiming about ${humanBytes(plan.totalBytes)}.` +
+              (refused.length ? ` ${refused.length} could not be removed: ${refused.join(", ")}` : ""),
+          },
+        ],
+        details: { removed, refused },
+      };
+    },
+  });
+
+  return [runTool, statusTool, listTool, viewTool, reviewTool, profileTool, stopTool, cleanTool];
 }

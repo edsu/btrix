@@ -15,11 +15,12 @@ import { Box, Text } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { finishRun, type Outcome } from "./src/finish.ts";
 import { CrawlMonitor, type WatchTarget } from "./src/monitor.ts";
-import { renderForModel, renderInventory, renderWidget } from "./src/render.ts";
+import { renderForModel, renderInventory, renderWidget, startupLines } from "./src/render.ts";
 import { ReplayServers } from "./src/serve.ts";
 import { humanBytes } from "./src/sizes.ts";
 import type { CrawlStats } from "./src/stats.ts";
 import { activeRun, collectionFor, legacyRoot, resolveStore, type Store } from "./src/store.ts";
+import { engineStatus } from "./src/engine.ts";
 import { firstRunPanel, probeAuth, readyHeader } from "./src/firstrun.ts";
 import { buildInventory } from "./src/inventory.ts";
 import { configPath, createTools, listConfigs } from "./src/tools.ts";
@@ -187,15 +188,19 @@ export default function (pi: ExtensionAPI) {
     // State lives on disk, not in the session: a crawl started in another
     // session, or by hand, is picked up here and gets a widget.
     const adopted = await monitor.adoptRunning(targetFor);
-    if (adopted.length) {
-      await monitor.tick();
-      if (ctx.hasUI) ctx.ui.notify(`btrix: watching ${adopted.map((t) => t.config).join(", ")}`, "info");
-    } else if (ctx.hasUI && auth.ready && store.source === "default" && listConfigs(store).length === 0) {
-      ctx.ui.notify(`btrix: no crawls here yet. A store will be created at ${store.root} when you start one.`, "info");
-    }
+    if (adopted.length) await monitor.tick();
 
     if (ctx.hasUI && auth.ready) {
       ctx.ui.setStatus("btrix", ctx.ui.theme.fg("dim", readyHeader(auth, store.root)[1] ?? ""));
+
+      // Orient the user in three lines, without spending a turn on it. The
+      // engine check is the important one: finding out that Docker is absent
+      // or asleep here beats finding out several minutes into an image pull.
+      const [engine, inv] = await Promise.all([engineStatus(), buildInventory(store, legacy)]);
+      ctx.ui.setWidget(
+        "btrix:startup",
+        startupLines({ inv, engine, model: readyHeader(auth, store.root)[1], adopted: adopted.map((t) => t.config) }, ctx.ui.theme),
+      );
     }
   });
 
@@ -206,6 +211,9 @@ export default function (pi: ExtensionAPI) {
     if (ctx.hasUI && probeAuth(ctx.modelRegistry as never).ready) {
       ctx.ui.setWidget("btrix:firstrun", undefined);
     }
+    // The startup summary has done its job once work begins; the rows are
+    // better spent on the transcript.
+    ctx.ui.setWidget("btrix:startup", undefined);
     return undefined;
   });
 
@@ -239,6 +247,7 @@ export default function (pi: ExtensionAPI) {
     for (const target of monitor.watched()) ctxRef?.ui.setWidget(widgetKey(target.config), undefined);
     ctxRef?.ui.setWidget("btrix:inventory", undefined);
     ctxRef?.ui.setWidget("btrix:firstrun", undefined);
+    ctxRef?.ui.setWidget("btrix:startup", undefined);
     ctxRef?.ui.setStatus("btrix-replay", undefined);
     ctxRef?.ui.setStatus("btrix", undefined);
     monitor.dispose();

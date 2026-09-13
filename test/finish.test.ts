@@ -87,13 +87,24 @@ describe("finishRun", () => {
     expect(path.basename(b.dest!)).toMatch(/^stanford-news-20260913T113705(-\d+)?\.wacz$/);
   });
 
-  it("treats the warc directory as the deliverable when generateWACZ is off", async () => {
-    const root = makeRun({ warcs: true });
-    const out = await finishRun(store, { config: "sulnews", collection: "stanford-news", root }, stats());
+  it("distinguishes generateWACZ being off from a crawl that ended early", async () => {
+    // Same outcome on disk, quite different causes; guessing wrong misleads.
+    const wanted = makeRun({ warcs: true });
+    const a = await finishRun(store, { config: "sulnews", collection: "stanford-news", root: wanted }, stats());
+    expect(a.kind).toBe("warc-only");
+    expect(a.message).toContain("ended before a wacz was written");
+    expect(a.message).toContain("re-crawling");
+    expect(fs.existsSync(path.join(a.dest!, "archive", "rec-1.warc.gz"))).toBe(true);
 
-    expect(out.kind).toBe("warc-only");
-    expect(out.message).toContain("generateWACZ is off");
-    expect(fs.existsSync(path.join(out.dest!, "archive", "rec-1.warc.gz"))).toBe(true);
+    fs.writeFileSync(path.join(store.configDir, "nowacz.yaml"), "collection: nowacz\ngenerateWACZ: false\n");
+    const off = prepareRun(store, "nowacz", new Date(2026, 8, 13, 12, 0, 0));
+    const coll = path.join(off, "collections", "nowacz", "archive");
+    fs.mkdirSync(coll, { recursive: true });
+    fs.writeFileSync(path.join(coll, "rec-1.warc.gz"), Buffer.alloc(64));
+    const b = await finishRun(store, { config: "nowacz", collection: "nowacz", root: off }, stats({ name: "nowacz" }));
+    expect(b.kind).toBe("warc-only");
+    expect(b.message).toContain("generateWACZ is off");
+    expect(b.message).toContain("Set generateWACZ: true");
   });
 
   it("parks a run that produced nothing, rather than discarding it", async () => {

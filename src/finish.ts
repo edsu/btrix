@@ -7,6 +7,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { readConfig } from "./config.ts";
 import { analyzePages, type PagesReport, readPages } from "./pages.ts";
 import type { CrawlStats } from "./stats.ts";
 import { collectionFor, type Store } from "./store.ts";
@@ -163,20 +164,24 @@ export async function finishRun(store: Store, o: FinishOptions, stats: CrawlStat
     };
   }
 
-  // `generateWACZ: false` is a legitimate configuration; then the WARC
-  // directory is the deliverable and there is nothing to package.
+  // No wacz, but WARCs exist. Two quite different situations, and guessing the
+  // wrong one misleads: `generateWACZ: false` is a deliberate choice, while a
+  // crawl that was stopped or died simply never reached packaging.
   if (hasWarcs(path.join(collectionDir, "archive"))) {
     fs.mkdirSync(store.outDir, { recursive: true });
     const dest = freeName(store.outDir, o.collection, "", runName);
     await fs.promises.rename(collectionDir, dest);
     const sidecar = writeSidecar(path.join(dest, o.collection), store, o, stats, review);
+    const wanted = readConfig(path.join(o.root, "config", `${o.config}.yaml`), o.config).generateWacz;
     return {
       kind: "warc-only",
       dest,
       sidecar,
-      message:
-        `${o.collection}: no wacz (generateWACZ is off), so the warc directory is the deliverable — ` +
-        `${displayPath(dest)}`,
+      message: wanted
+        ? `${o.collection}: ended before a wacz was written, so the warcs are what there is — ${displayPath(dest)}. ` +
+          "They hold the pages that were captured, but ReplayWeb.page needs a wacz, so replaying means re-crawling."
+        : `${o.collection}: generateWACZ is off for this config, so the warc directory is the deliverable — ` +
+          `${displayPath(dest)}. Set generateWACZ: true if you want to replay it.`,
     };
   }
 

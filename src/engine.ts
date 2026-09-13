@@ -102,7 +102,30 @@ export async function isCrawlRunning(name: string): Promise<boolean> {
   return (await runningCrawls()).some((c) => c.config === name);
 }
 
-/** Stop specific containers by id. Used to wire a tool's AbortSignal. */
+/**
+ * Stop containers by id, with `stop` rather than `kill`.
+ *
+ * `kill` sends SIGKILL, which would cut the crawler off mid-write and can leave
+ * a WARC truncated. `stop` sends SIGTERM first and only escalates after the
+ * grace period, giving it a chance to close its files, so a stopped crawl still
+ * has usable output.
+ */
+export async function stopContainers(ids: string[], graceSeconds = 30): Promise<number> {
+  const bin = await engine();
+  if (!bin || !ids.length) return 0;
+  let stopped = 0;
+  for (const id of ids) {
+    try {
+      await exec(bin, ["stop", "-t", String(graceSeconds), id], { timeout: (graceSeconds + 15) * 1000 });
+      stopped++;
+    } catch {
+      // Already gone, or not ours to stop.
+    }
+  }
+  return stopped;
+}
+
+/** Kept for the abort-before-anything-is-written case. */
 export async function killContainers(ids: string[]): Promise<number> {
   const bin = await engine();
   if (!bin || !ids.length) return 0;
@@ -118,19 +141,45 @@ export async function killContainers(ids: string[]): Promise<number> {
   return killed;
 }
 
-/** Stop the container crawling `name`. Used to wire a tool's AbortSignal. */
-export async function killCrawl(name: string): Promise<boolean> {
+/**
+ * Stop the crawl for `name`, letting the crawler close its files first so
+ * whatever it captured stays readable.
+ */
+export async function stopCrawl(name: string, graceSeconds = 30): Promise<number> {
+  const ids = (await runningCrawls()).filter((c) => c.config === name).map((c) => c.id);
+  return stopContainers(ids, graceSeconds);
+}
+
+/** Engine availability, for telling the user at startup rather than mid-pull. */
+export interface EngineStatus {
+  /** The binary found, if any. */
+  bin?: string;
+  /** Whether it answers, i.e. the daemon is actually up. */
+  usable: boolean;
+  problem?: string;
+}
+
+export async function engineStatus(): Promise<EngineStatus> {
   const bin = await engine();
-  if (!bin) return false;
-  const targets = (await runningCrawls()).filter((c) => c.config === name);
-  let killed = false;
-  for (const t of targets) {
-    try {
-      await exec(bin, ["kill", t.id], { timeout: 15_000 });
-      killed = true;
-    } catch {
-      // Already gone, or not ours to kill.
-    }
+  if (!bin) {
+    return {
+      usable: false,
+      problem:
+        "No docker or podman found. Browsertrix Crawler runs in a container, so btrix cannot crawl without one. " +
+        "Install Docker Desktop (https://docs.docker.com/get-docker/) or podman, then restart btrix.",
+    };
   }
-  return killed;
+  try {
+    // `info` needs the daemon, unlike `--version`, which only needs the client.
+    await exec(bin, ["info", "--format", "{{.ServerVersion}}"], { timeout: 20_000 });
+    return { bin, usable: true };
+  } catch {
+    return {
+      bin,
+      usable: false,
+      problem: `${bin} is installed but not responding — its daemon is probably not running. Start ${
+        bin === "docker" ? "Docker Desktop" : "the podman machine"
+      } and try again.`,
+    };
+  }
 }

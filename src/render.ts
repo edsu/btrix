@@ -354,3 +354,69 @@ export function reviewForModel(name: string, r: PagesReport): string {
 
   return lines.join("\n");
 }
+
+// ---------------------------------------------------------------------------
+// Startup
+// ---------------------------------------------------------------------------
+
+export interface StartupInfo {
+  inv: Inventory;
+  engine: { usable: boolean; bin?: string; problem?: string };
+  model?: string;
+  adopted: string[];
+}
+
+/**
+ * What is worth saying before the user has asked anything.
+ *
+ * Chosen by "would this change what you do next": where the store is, whether
+ * a crawl is already running, whether the container engine will actually work,
+ * and anything that is quietly costing disk. Deliberately short — every row
+ * here is a row of transcript the user does not get.
+ */
+export function startupLines(info: StartupInfo, theme: ThemeLike = plainTheme): string[] {
+  const dim = (t: string) => theme.fg("dim", t);
+  const sep = dim(" · ");
+  const { inv } = info;
+
+  const head = [theme.fg("accent", "btrix"), dim(inv.store.root)];
+  if (inv.free !== undefined) head.push(dim(`${humanBytes(inv.free)} free`));
+  if (info.model) head.push(dim(info.model.replace(/^store .*? · /, "")));
+
+  const empty = !inv.configs.length && !inv.archives.length;
+  const facts: string[] = [];
+  // "0 configs" adds nothing next to the invitation below.
+  if (!empty) facts.push(dim(`${inv.configs.length} config${inv.configs.length === 1 ? "" : "s"}`));
+  if (inv.archives.length) {
+    const bytes = inv.archives.reduce((n, a) => n + (a.bytes ?? 0), 0);
+    facts.push(dim(`${inv.archives.length} archive${inv.archives.length === 1 ? "" : "s"} ${humanBytes(bytes)}`));
+  }
+  if (inv.profiles.length) facts.push(dim(`${inv.profiles.length} login profile(s)`));
+
+  const lines = [head.join(sep)];
+  if (facts.length) lines.push("  " + facts.join(sep));
+
+  // A crawl still going from an earlier session is the most useful thing to
+  // know, so it gets its own line rather than a footnote.
+  if (info.adopted.length) {
+    lines.push("  " + theme.fg("accent", `still crawling: ${info.adopted.join(", ")} — progress below`));
+  }
+
+  const warnings: string[] = [];
+  if (!info.engine.usable && info.engine.problem) warnings.push(info.engine.problem);
+  if (inv.failed.count) {
+    warnings.push(
+      `${inv.failed.count} failed run(s) holding ${humanBytes(inv.failed.bytes)} — ask me to clear them`,
+    );
+  }
+  if (inv.free !== undefined && inv.free < 5 * 1024 ** 3) {
+    warnings.push("less than 5G free; the crawler aborts outright when the disk fills mid-crawl");
+  }
+  if (inv.orphans.length) warnings.push(`no matching config: ${inv.orphans.join(", ")}`);
+  for (const w of warnings) lines.push("  " + theme.fg(info.engine.usable ? "warning" : "error", `⚠ ${w}`));
+
+  if (empty && info.engine.usable) {
+    lines.push("  " + dim("nothing here yet — tell me a site to archive and I will set it up"));
+  }
+  return lines;
+}

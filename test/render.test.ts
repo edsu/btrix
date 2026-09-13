@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { plainTheme, renderForModel, renderWidget } from "../src/render.ts";
+import { plainTheme, renderForModel, renderWidget, startupLines } from "../src/render.ts";
 import type { CrawlStats } from "../src/stats.ts";
 import { humanBytes, humanDuration } from "../src/sizes.ts";
 
@@ -115,5 +115,63 @@ describe("formatting", () => {
     expect(humanDuration(2 * 3600_000 + 10 * 60_000)).toBe("2h10m");
     expect(humanDuration(3 * 24 * 3600_000)).toBe("3d");
     expect(humanDuration(undefined)).toBe("-");
+  });
+});
+
+describe("startupLines", () => {
+  const inv = (over: Record<string, any> = {}): any => ({
+    store: { root: "/w/btrix" },
+    configs: [{ name: "sulnews", collection: "stanford-news", behaviors: [], generateWacz: true, textToPages: true, path: "", }],
+    runs: [],
+    archives: [],
+    failed: { count: 0 },
+    profiles: [],
+    free: 39 * 1024 ** 3,
+    running: [],
+    legacyCollections: [],
+    neverRun: [],
+    orphans: [],
+    ...over,
+  });
+
+  it("orients in a couple of lines: where, how much room, what is here", () => {
+    const out = startupLines({ inv: inv(), engine: { usable: true, bin: "docker" }, adopted: [] }, plainTheme).join("\n");
+    expect(out).toContain("/w/btrix");
+    expect(out).toContain("39G free");
+    expect(out).toContain("1 config");
+  });
+
+  it("leads with a missing container engine, since nothing works without one", () => {
+    const out = startupLines(
+      { inv: inv(), engine: { usable: false, problem: "No docker or podman found." }, adopted: [] },
+      plainTheme,
+    ).join("\n");
+    // Better here than several minutes into an image pull.
+    expect(out).toContain("No docker or podman found.");
+  });
+
+  it("calls out a crawl still running from an earlier session", () => {
+    const out = startupLines({ inv: inv(), engine: { usable: true }, adopted: ["sulnews"] }, plainTheme).join("\n");
+    expect(out).toContain("still crawling: sulnews");
+  });
+
+  it("mentions space quietly held by failed runs, and low disk", () => {
+    const out = startupLines(
+      { inv: inv({ failed: { count: 3, bytes: 2.1 * 1024 ** 3 }, free: 2 * 1024 ** 3 }), engine: { usable: true }, adopted: [] },
+      plainTheme,
+    ).join("\n");
+    expect(out).toContain("3 failed run(s) holding 2.1G");
+    expect(out).toContain("less than 5G free");
+  });
+
+  it("invites a first crawl when the store is empty", () => {
+    const out = startupLines({ inv: inv({ configs: [] }), engine: { usable: true }, adopted: [] }, plainTheme).join("\n");
+    expect(out).toContain("nothing here yet");
+  });
+
+  it("stays short", () => {
+    // Every line here is a line of transcript the user does not get.
+    const out = startupLines({ inv: inv(), engine: { usable: true }, adopted: [] }, plainTheme);
+    expect(out.length).toBeLessThanOrEqual(3);
   });
 });
