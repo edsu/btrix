@@ -6,6 +6,8 @@ your favorite LLM, and describing what you want archived. Crawls run locally in
 a container and produce WACZ files you can replay in
 [ReplayWeb.page](https://replayweb.page).
 
+![btrix in use: describing a site to archive, watching the crawl, and replaying the result](docs/demo.gif)
+
 ## Install
 
 Requires [Docker or Podman](https://docs.docker.com/get-docker/) and Node 22.19+.
