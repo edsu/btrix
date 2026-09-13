@@ -13,67 +13,92 @@
 
 import { Box, Text } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { CrawlMonitor } from "./src/monitor.ts";
+import { finishRun, type Outcome } from "./src/finish.ts";
+import { CrawlMonitor, type WatchTarget } from "./src/monitor.ts";
 import { renderForModel, renderWidget } from "./src/render.ts";
 import { humanBytes } from "./src/sizes.ts";
 import type { CrawlStats } from "./src/stats.ts";
-import { createTools } from "./src/tools.ts";
+import { activeRun, collectionFor, legacyRoot, resolveStore, type Store } from "./src/store.ts";
+import { configPath, createTools, listConfigs } from "./src/tools.ts";
 
 /** Free space below which starting a crawl is worth a confirmation. */
 const LOW_DISK_BYTES = 5 * 1024 ** 3;
 
-const widgetKey = (name: string) => `btrix:${name}`;
+const widgetKey = (config: string) => `btrix:${config}`;
+
+interface SummaryCard {
+  stats: CrawlStats;
+  outcome: Outcome;
+}
 
 export default function (pi: ExtensionAPI) {
-  // Constructing the monitor starts nothing: its timer only begins on the
-  // first watch(), which happens in session_start or a tool call. Extension
-  // factories can run in invocations that never open a session, so background
-  // resources must not be started here.
+  pi.registerFlag("dir", {
+    description: "btrix store directory (default: ./btrix)",
+    type: "string",
+  });
+
   const cwd = process.cwd();
+  // Resolved once the CLI has parsed --dir, at session_start.
+  let store: Store = resolveStore({ cwd });
+  let legacy = legacyRoot(cwd);
   let ctxRef: ExtensionContext | undefined;
 
   const monitor = new CrawlMonitor({
-    cwd,
     intervalMs: 1_000,
-    onTick(stats) {
+    onTick(stats, target) {
       const ctx = ctxRef;
       if (!ctx?.hasUI) return;
-      ctx.ui.setWidget(widgetKey(stats.name), renderWidget(stats, ctx.ui.theme));
+      ctx.ui.setWidget(widgetKey(target.config), renderWidget(stats, ctx.ui.theme));
     },
-    onComplete(stats) {
+    async onComplete(stats, target) {
       const ctx = ctxRef;
       // Clear the live widget; the durable card takes over.
-      ctx?.ui.setWidget(widgetKey(stats.name), undefined);
+      ctx?.ui.setWidget(widgetKey(target.config), undefined);
 
-      // Human-facing summary. Custom entries do not enter LLM context, so
-      // this costs nothing.
-      pi.appendEntry<CrawlStats>("btrix-summary", stats);
+      // Promote the deliverable out of the run directory before announcing
+      // anything, so the card and the model both name its final location.
+      let outcome: Outcome;
+      try {
+        outcome = await finishRun(store, target, stats);
+      } catch (err) {
+        outcome = {
+          kind: "failed",
+          message: `${target.collection}: finished, but moving the result failed — ${String(err)}`,
+        };
+      }
 
-      // One message, one turn: the model announces the result and can offer
-      // a review. This replaces Claude Code's background-task completion
-      // notification, which is what the old run skill relied on.
+      // Custom entries do not enter LLM context, so the card costs nothing.
+      pi.appendEntry<SummaryCard>("btrix-summary", { stats, outcome });
+
+      // One message, one turn: the model announces the result and can offer a
+      // review. This replaces Claude Code's background-task completion
+      // notification, which the old run skill relied on.
       pi.sendMessage(
         {
           customType: "btrix",
-          content:
-            stats.state === "done"
-              ? `The ${stats.name} crawl finished. ${renderForModel(stats)}`
-              : `The ${stats.name} crawl ended without producing a WACZ. ${renderForModel(stats)}`,
+          content: `${outcome.message} ${renderForModel(stats)}`,
           display: false,
-          details: stats,
+          details: { stats, outcome },
         },
         { deliverAs: "followUp", triggerTurn: true },
       );
     },
   });
 
-  for (const tool of createTools(monitor, cwd)) pi.registerTool(tool);
+  for (const tool of createTools(
+    monitor,
+    () => store,
+    () => legacy,
+  )) {
+    pi.registerTool(tool);
+  }
 
-  pi.registerEntryRenderer<CrawlStats>("btrix-summary", (entry, { expanded }, theme) => {
-    const s = entry.data;
+  pi.registerEntryRenderer<SummaryCard>("btrix-summary", (entry, { expanded }, theme) => {
+    const s = entry.data?.stats;
+    const outcome = entry.data?.outcome;
     if (!s) return undefined;
     const box = new Box(1, 1, (t) => theme.bg("customMessageBg", t));
-    const ok = s.state === "done";
+    const ok = outcome?.kind !== "failed";
     const size = s.bytes.wacz ?? s.bytes.archive;
     box.addChild(
       new Text(
@@ -83,12 +108,24 @@ export default function (pi: ExtensionAPI) {
         0,
       ),
     );
+    if (outcome?.dest) box.addChild(new Text(theme.fg("mdLink", outcome.dest), 0, 0));
     if (expanded) {
       box.addChild(new Text(theme.fg("dim", renderForModel(s)), 0, 0));
-      if (s.waczPath) box.addChild(new Text(theme.fg("mdLink", s.waczPath), 0, 0));
+      if (outcome?.parked) box.addChild(new Text(theme.fg("dim", `run kept at ${outcome.parked}`), 0, 0));
     }
     return box;
   });
+
+  /** Resolve a config name to the run it is writing into. */
+  const targetFor = (config: string): WatchTarget | undefined => {
+    const file = configPath(store, config);
+    const collection = file ? collectionFor(file, config) : config;
+    const root = activeRun(store, config, collection);
+    if (root) return { config, collection, root };
+    // A crawl running against a legacy or hand-made working directory.
+    if (legacy) return { config, collection, root: legacy };
+    return undefined;
+  };
 
   /** Manual readout, rendered for the human without involving the model. */
   pi.registerCommand("btrix", {
@@ -96,8 +133,14 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       ctxRef = ctx;
       const name = args.trim();
-      if (name) monitor.watch(name);
-      else if ((await monitor.adoptRunning()).length === 0 && monitor.watched().length === 0) {
+      if (name) {
+        const target = targetFor(name);
+        if (!target) {
+          ctx.ui.notify(`No crawl found for ${name}.`, "warning");
+          return;
+        }
+        monitor.watch(target);
+      } else if ((await monitor.adoptRunning(targetFor)).length === 0 && monitor.watched().length === 0) {
         ctx.ui.notify("No crawl is running. Start one with btrix_run.", "info");
         return;
       }
@@ -107,12 +150,20 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     ctxRef = ctx;
+
+    // --dir is only available once the CLI has parsed it.
+    const flag = pi.getFlag("dir");
+    store = resolveStore({ dir: typeof flag === "string" ? flag : undefined, cwd: ctx.cwd ?? cwd });
+    legacy = legacyRoot(ctx.cwd ?? cwd);
+
     // State lives on disk, not in the session: a crawl started in another
     // session, or by hand, is picked up here and gets a widget.
-    const adopted = await monitor.adoptRunning();
+    const adopted = await monitor.adoptRunning(targetFor);
     if (adopted.length) {
       await monitor.tick();
-      if (ctx.hasUI) ctx.ui.notify(`btrix: watching ${adopted.join(", ")}`, "info");
+      if (ctx.hasUI) ctx.ui.notify(`btrix: watching ${adopted.map((t) => t.config).join(", ")}`, "info");
+    } else if (ctx.hasUI && store.source === "default" && listConfigs(store).length === 0) {
+      ctx.ui.notify(`btrix: no crawls here yet. A store will be created at ${store.root} when you start one.`, "info");
     }
   });
 
@@ -120,9 +171,9 @@ export default function (pi: ExtensionAPI) {
   // worth a prompt is ours to ask.
   pi.on("tool_call", async (event, ctx) => {
     if (event.toolName !== "btrix_run") return undefined;
-    const stats = await monitor
-      .stats(String((event.input as { config?: unknown }).config ?? ""))
-      .catch(() => undefined);
+    const config = String((event.input as { config?: unknown }).config ?? "");
+    const target = targetFor(config);
+    const stats = target ? await monitor.stats(target).catch(() => undefined) : undefined;
     const free = stats?.free;
     if (free !== undefined && free < LOW_DISK_BYTES) {
       const msg = `Only ${humanBytes(free)} free. Browsertrix aborts outright when the disk fills mid-crawl.`;
@@ -137,7 +188,7 @@ export default function (pi: ExtensionAPI) {
   // Idempotent: stop rendering, but leave the containers running. A detached
   // crawl outliving the session is the point.
   pi.on("session_shutdown", async () => {
-    for (const name of monitor.watched()) ctxRef?.ui.setWidget(widgetKey(name), undefined);
+    for (const target of monitor.watched()) ctxRef?.ui.setWidget(widgetKey(target.config), undefined);
     monitor.dispose();
     ctxRef = undefined;
   });

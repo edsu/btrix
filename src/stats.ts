@@ -32,7 +32,10 @@ export type CrawlState =
   | "stopped"; // no container, no WACZ — died or was killed
 
 export interface CrawlStats {
+  /** Collection name — the directory the crawler writes into. */
   name: string;
+  /** Config that produced it. Shown when it differs from the collection. */
+  config?: string;
   state: CrawlState;
   phase: CrawlPhase;
   containerRunning: boolean;
@@ -72,6 +75,7 @@ const SIZE_REFRESH_MS = 5_000;
 
 export class CrawlTailer {
   readonly name: string;
+  readonly config?: string;
   private readonly dir: string;
   private readonly facts: LogFacts = emptyFacts();
   private readonly offsets = new Map<string, number>();
@@ -79,9 +83,14 @@ export class CrawlTailer {
   private readonly samples: CrawlSample[] = [];
   private sizes: { archive?: number; profile?: number; wacz?: number; free?: number; at: number } = { at: 0 };
 
-  constructor(name: string, cwd: string = process.cwd()) {
+  /**
+   * `root` is whatever directory holds `collections/` — a run directory under
+   * the store, or a legacy/hand-run working directory.
+   */
+  constructor(name: string, root: string = process.cwd(), config?: string) {
     this.name = name;
-    this.dir = path.join(cwd, "collections", name);
+    this.config = config;
+    this.dir = path.join(root, "collections", name);
   }
 
   private logFiles(): string[] {
@@ -132,6 +141,11 @@ export class CrawlTailer {
         await handle?.close();
       }
     }
+  }
+
+  /** The directory this tailer is reading, for callers that need to move it. */
+  get collectionDir(): string {
+    return this.dir;
   }
 
   private async refreshSizes(now: number): Promise<void> {
@@ -192,6 +206,7 @@ export class CrawlTailer {
 
     return {
       name: this.name,
+      config: this.config,
       state: deriveState({ facts: f, wacz: !!waczPath, containerRunning }),
       phase: f.phase,
       containerRunning,

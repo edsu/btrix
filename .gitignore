@@ -10,4 +10,8 @@ tmp
 .btrix
 *.wacz
 
+# A btrix store created by running btrix from inside its own repo. Rooted, so
+# it cannot match the repository directory itself.
+/btrix/
+
 .DS_Store

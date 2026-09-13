@@ -20,8 +20,12 @@ function stubApi() {
   const messages: any[] = [];
   const entries: any[] = [];
 
+  const flags = new Map<string, any>();
+
   const api = {
     registerTool: (t: any) => tools.push(t),
+    registerFlag: (name: string, opts: any) => flags.set(name, opts),
+    getFlag: (name: string) => flags.get(name)?.value,
     registerCommand: (name: string, opts: any) => commands.set(name, opts),
     registerEntryRenderer: (type: string, r: any) => entryRenderers.set(type, r),
     on: (name: string, h: Handler) => {
@@ -33,7 +37,7 @@ function stubApi() {
     appendEntry: (type: string, data: any) => entries.push({ type, data }),
   } as unknown as ExtensionAPI;
 
-  return { api, tools, commands, events, entryRenderers, messages, entries };
+  return { api, tools, commands, events, entryRenderers, messages, entries, flags };
 }
 
 function stubCtx(overrides: Record<string, unknown> = {}) {
@@ -61,6 +65,12 @@ describe("extension wiring", () => {
       expect(typeof tool.execute).toBe("function");
       expect(tool.description.length).toBeGreaterThan(40);
     }
+  });
+
+  it("registers the --dir flag so the store can be relocated", () => {
+    const s = stubApi();
+    extension(s.api);
+    expect(s.flags.get("dir")).toMatchObject({ type: "string" });
   });
 
   it("registers the command, the summary renderer and the lifecycle handlers", () => {
@@ -107,6 +117,8 @@ describe("extension wiring", () => {
     const card = renderer(
       {
         data: {
+          outcome: { kind: "promoted", dest: "btrix/out/mysite.wacz", message: "ok" },
+          stats: {
           name: "mysite",
           state: "done",
           phase: "done",
@@ -123,7 +135,8 @@ describe("extension wiring", () => {
           bytes: { wacz: 5 * 1024 ** 2 },
           discovering: false,
           windowMs: 60_000,
-          waczPath: "collections/mysite/mysite.wacz",
+          waczPath: "btrix/out/mysite.wacz",
+          },
         },
       },
       { expanded: true },
@@ -131,5 +144,27 @@ describe("extension wiring", () => {
     );
     expect(card).toBeTruthy();
     expect(renderer({ data: undefined }, { expanded: false }, theme)).toBeUndefined();
+  });
+});
+
+describe("--dir reaches the tools", () => {
+  // The factory registers tools before the CLI has parsed --dir, so the store
+  // must be read through an accessor rather than captured.
+  it("resolves the store lazily, not at registration time", async () => {
+    const { createTools } = await import("../src/tools.ts");
+    const { CrawlMonitor } = await import("../src/monitor.ts");
+    const { resolveStore } = await import("../src/store.ts");
+    const monitor = new CrawlMonitor();
+    let store = resolveStore({ cwd: "/one", env: {} });
+    const tools = createTools(monitor, () => store);
+
+    // Relocate after the tools exist, as --dir does.
+    store = resolveStore({ dir: "/two", cwd: "/one", env: {} });
+    const result: any = await tools
+      .find((t) => t.name === "btrix_status")!
+      .execute("id", { name: "ghost" }, undefined, undefined, {} as any);
+    monitor.dispose();
+    // The message names the new store, proving the accessor was consulted.
+    expect(result.content[0].text).toContain("ghost");
   });
 });

@@ -47,12 +47,34 @@ pi -e ~/Projects/btrix
 
 ## Use
 
-`cd` into a working directory — crawls read `./config` and write `./collections`
-there — and talk to pi:
+`cd` into a working directory and talk to pi. Everything btrix touches lives in
+one directory beside your work:
+
+```
+./                                  your project dir
+├── btrix/                          one directory; tar it and go
+│   ├── config/sulnews.yaml         authored configs (versionable)
+│   ├── runs/sulnews-20260913T1137/ mounted at /crawls: WARCs, logs, CDX, state
+│   ├── out/sulnews.wacz            the deliverable, moved here on success
+│   ├── out/sulnews.btrix.json      provenance sidecar
+│   ├── profiles/                   browser logins, mode 0700
+│   └── failed/                     runs that produced nothing, kept to inspect
+└── notes.md, Makefile, .git/       your stuff, untouched
+```
+
+Point the store somewhere else with `--dir` or `$BTRIX_DIR` — that names the
+store root itself, so `btrix --dir /Volumes/archive/sulnews` puts the whole
+thing on that volume. Because work and output share a tree, promoting a
+finished WACZ is always a same-volume rename, never a copy: there is no
+cross-device path to get wrong, and no way to fill your home partition on a
+crawl you meant to land elsewhere.
+
+The store writes its own `.gitignore`, so bulk output and credential-bearing
+profiles stay out of version control while `config/` remains yours to commit.
 
 | You say | What happens |
 |---|---|
-| "crawl sulnews" | `btrix_run` starts `config/sulnews.yaml` detached, then the widget takes over |
+| "crawl sulnews" | `btrix_run` starts `btrix/config/sulnews.yaml` detached, then the widget takes over |
 | "how's it going?" | `btrix_status` — but you usually won't need to ask, the widget is already showing it |
 | `/btrix [name]` | Repaint the widget by hand. No model turn |
 
@@ -72,13 +94,21 @@ uncertain is carried by colour, not by adjective.
 The crawl is **detached**, so it outlives the session: quit pi, come back
 tomorrow, and the widget re-attaches. State lives on disk — the crawler's own
 JSON logs plus `docker ps` — so a crawl started in another session or by hand is
-picked up too. When one finishes you get a summary card (which never enters the
-model's context) and exactly one model turn announcing the result.
+picked up too. A crawl btrix did not start is left exactly where it is; only its
+own runs get promoted.
+
+When one finishes, the WACZ moves into `btrix/out/` with a sidecar recording
+the config that produced it, the crawler version, page counts and any warnings
+— so the archive stays self-describing after someone emails it onwards. You get
+a summary card (which never enters the model's context) and exactly one model
+turn announcing the result.
 
 ## Layout
 
 | Path | What |
 |---|---|
+| `src/store.ts` | Where files live: `--dir` / `$BTRIX_DIR` / `./btrix`, run directories, the `collection:` key |
+| `src/finish.ts` | Promotes a finished run into `out/`, or parks it in `failed/` |
 | `src/log.ts` | Pure parser for the crawler's JSON log lines. No fs, so it tests against fixtures |
 | `src/stats.ts` | Incremental tailer: byte offsets, sample ring buffer, derived rates and states |
 | `src/monitor.ts` | Poll loop and completion detection. Knows nothing about pi |
@@ -87,6 +117,7 @@ model's context) and exactly one model turn announcing the result.
 | `src/tools.ts` | `btrix_run`, `btrix_status` |
 | `index.ts` | pi wiring only: tools, widget, entry renderer, disk-space gate |
 | `scripts/run.sh` | The `docker run`. Stays shell so you can run a crawl by hand |
+| `test/fixtures/*.log` | Real crawl logs, so the parser is tested against what browsertrix actually emits |
 | `skills/behaviors/` | Writing and debugging custom crawl behaviors — carried over unchanged |
 
 Container invocation stays in shell on purpose: its whole job is picking an
@@ -98,7 +129,7 @@ earn it.
 
 ```bash
 npm install
-npm test          # 38 tests, no container or model needed
+npm test          # 68 tests, no container or model needed
 npm run check     # tsc --noEmit
 ```
 
@@ -111,8 +142,8 @@ The spawn path has no automated test — it would pull a 2.4GB image and start a
 real crawl. Do it by hand:
 
 ```bash
-mkdir -p /tmp/crawltest/config && cd /tmp/crawltest
-cat > config/example.yaml <<'EOF'
+mkdir -p /tmp/crawltest/btrix/config && cd /tmp/crawltest
+cat > btrix/config/example.yaml <<'EOF'
 seeds:
   - url: https://example.com/
 scopeType: page
@@ -128,13 +159,15 @@ Then ask it to crawl `example`, and check the things that are the whole point:
 - `/session` token count doesn't grow while the crawl runs;
 - Ctrl+C during startup stops the container (`docker ps` comes back empty);
 - quitting pi leaves the crawl running, and reopening re-attaches the widget;
-- completion produces **one** model turn, plus a summary card.
+- completion produces **one** model turn, plus a summary card;
+- the WACZ ends up in `btrix/out/` with its `.btrix.json` sidecar.
 
 ## Status
 
-Milestone 1: `run` and `status`. Not yet ported from the Claude Code plugin:
-`list`, `review`, `view`, `profile`, `new`. `skills/behaviors/scripts/waczserve.py`
-is still Python, so `python3` is needed for local replay serving.
+`run` and `status`, over a self-contained store. Not yet ported from the Claude
+Code plugin: `list`, `review`, `view`, `profile`, `new`.
+`skills/behaviors/scripts/waczserve.py` is still Python, so `python3` is needed
+for local replay serving.
 
 ## License
 

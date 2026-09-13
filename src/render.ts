@@ -44,6 +44,15 @@ function isLive(s: CrawlStats): boolean {
   return s.state === "crawling" || s.state === "post-crawl" || s.state === "generating-wacz";
 }
 
+/**
+ * A config named sulnews.yaml can declare `collection: stanford-news`. Showing
+ * both when they diverge saves the user wondering why they asked about one name
+ * and got another.
+ */
+function label(s: CrawlStats): string {
+  return s.config && s.config !== s.name ? `${s.config} → ${s.name}` : s.name;
+}
+
 function percent(s: CrawlStats): string {
   if (!s.total) return "";
   return `${Math.round((s.crawled / s.total) * 100)}%`;
@@ -61,7 +70,7 @@ export function renderWidget(s: CrawlStats, theme: ThemeLike = plainTheme): stri
     theme.fg("accent", "btrix"),
     theme.fg("border", "│"),
     theme.fg(STATE_COLOR[s.state], STATE_LABEL[s.state]),
-    theme.fg("text", s.name),
+    theme.fg("text", label(s)),
   ];
 
   const progress: string[] = [];
@@ -120,7 +129,7 @@ export function renderWidget(s: CrawlStats, theme: ThemeLike = plainTheme): stri
  * only needs to support a question or a diagnosis.
  */
 export function renderForModel(s: CrawlStats): string {
-  const parts: string[] = [`${s.name}: ${STATE_LABEL[s.state]}`];
+  const parts: string[] = [`${label(s)}: ${STATE_LABEL[s.state]}`];
   if (s.total) parts.push(`${s.crawled}/${s.total} pages${s.discovering ? " (total still growing)" : ""}`);
   else if (s.crawled) parts.push(`${s.crawled} pages`);
   if (s.pagesPerMin !== undefined && isLive(s)) parts.push(`${s.pagesPerMin.toFixed(1)} pages/min`);

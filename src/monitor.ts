@@ -1,27 +1,35 @@
 /**
  * Owns the tailers and the poll loop, and decides when a crawl has finished.
  *
- * Kept separate from the extension wiring so it can be driven from a test or
- * any other front end: it knows nothing about pi.
+ * Knows nothing about pi, and nothing about where the store is: callers hand it
+ * a target, because each crawl attempt reads from its own run directory.
  */
 
 import { runningCrawls } from "./engine.ts";
 import { CrawlTailer, type CrawlStats } from "./stats.ts";
 
+/** A crawl to watch: which collection, in which directory. */
+export interface WatchTarget {
+  /** Config name, as the user says it and as the container reports it. */
+  config: string;
+  /** Collection name from the config, which need not match. */
+  collection: string;
+  /** Directory holding `collections/` — a run dir, or a legacy working dir. */
+  root: string;
+}
+
 export interface MonitorOptions {
-  cwd?: string;
   intervalMs?: number;
-  /** Called on every poll tick for every watched crawl. */
-  onTick?: (stats: CrawlStats) => void;
-  /** Called once, when a crawl we saw running reaches a terminal state. */
-  onComplete?: (stats: CrawlStats) => void;
+  onTick?: (stats: CrawlStats, target: WatchTarget) => void;
+  /** Called once when a crawl we saw running reaches a terminal state. */
+  onComplete?: (stats: CrawlStats, target: WatchTarget) => void | Promise<void>;
 }
 
 interface Entry {
+  target: WatchTarget;
   tailer: CrawlTailer;
-  /** Whether we have actually observed this crawl alive. Guards against
-   *  announcing "finished" for a collection that was already done when we
-   *  started up. */
+  /** Whether we have observed this crawl alive. Guards against announcing
+   *  "finished" for something that was already done when we started up. */
   sawLive: boolean;
   settled: boolean;
 }
@@ -29,7 +37,6 @@ interface Entry {
 const TERMINAL = new Set<CrawlStats["state"]>(["done", "stopped"]);
 
 export class CrawlMonitor {
-  private readonly cwd: string;
   private readonly intervalMs: number;
   private readonly entries = new Map<string, Entry>();
   private timer: NodeJS.Timeout | undefined;
@@ -38,45 +45,53 @@ export class CrawlMonitor {
 
   constructor(opts: MonitorOptions = {}) {
     this.opts = opts;
-    this.cwd = opts.cwd ?? process.cwd();
     this.intervalMs = opts.intervalMs ?? 1_000;
   }
 
-  private entry(name: string): Entry {
-    let e = this.entries.get(name);
-    if (!e) {
-      e = { tailer: new CrawlTailer(name, this.cwd), sawLive: false, settled: false };
-      this.entries.set(name, e);
+  /** Begin (or resume) tailing. Idempotent per config name. */
+  watch(target: WatchTarget): void {
+    const existing = this.entries.get(target.config);
+    if (existing && existing.target.root === target.root) {
+      existing.settled = false;
+    } else {
+      this.entries.set(target.config, {
+        target,
+        tailer: new CrawlTailer(target.collection, target.root, target.config),
+        sawLive: false,
+        settled: false,
+      });
     }
-    return e;
-  }
-
-  /** Begin (or resume) tailing `name`. Idempotent. */
-  watch(name: string): void {
-    const e = this.entry(name);
-    e.settled = false;
     this.start();
   }
 
-  unwatch(name: string): void {
-    this.entries.delete(name);
+  unwatch(config: string): void {
+    this.entries.delete(config);
     if (this.entries.size === 0) this.stop();
   }
 
-  watched(): string[] {
-    return [...this.entries.keys()];
+  watched(): WatchTarget[] {
+    return [...this.entries.values()].map((e) => e.target);
   }
 
-  /** One-shot reading. Creates a tailer if needed but does not start polling. */
-  async stats(name: string): Promise<CrawlStats> {
-    return this.entry(name).tailer.read();
+  /** One-shot reading, without starting the poll loop. */
+  async stats(target: WatchTarget): Promise<CrawlStats> {
+    const existing = this.entries.get(target.config);
+    if (existing && existing.target.root === target.root) return existing.tailer.read();
+    return new CrawlTailer(target.collection, target.root, target.config).read();
   }
 
-  /** Adopt any crawler containers already running in this directory. */
-  async adoptRunning(): Promise<string[]> {
-    const names = (await runningCrawls()).map((c) => c.config).filter((n): n is string => !!n);
-    for (const n of names) this.watch(n);
-    return names;
+  /** Adopt crawler containers already running, using a caller-supplied
+   *  resolver since only the caller knows where the store is. */
+  async adoptRunning(resolve: (config: string) => WatchTarget | undefined): Promise<WatchTarget[]> {
+    const adopted: WatchTarget[] = [];
+    for (const { config } of await runningCrawls()) {
+      if (!config) continue;
+      const target = resolve(config);
+      if (!target) continue;
+      this.watch(target);
+      adopted.push(target);
+    }
+    return adopted;
   }
 
   start(): void {
@@ -102,7 +117,7 @@ export class CrawlMonitor {
     if (this.ticking) return;
     this.ticking = true;
     try {
-      for (const [name, e] of [...this.entries]) {
+      for (const [, e] of [...this.entries]) {
         if (e.settled) continue;
         let stats: CrawlStats;
         try {
@@ -111,10 +126,10 @@ export class CrawlMonitor {
           continue;
         }
         if (!TERMINAL.has(stats.state) || stats.containerRunning) e.sawLive = true;
-        this.opts.onTick?.(stats);
+        this.opts.onTick?.(stats, e.target);
         if (e.sawLive && TERMINAL.has(stats.state) && !stats.containerRunning) {
           e.settled = true;
-          this.opts.onComplete?.(stats);
+          await this.opts.onComplete?.(stats, e.target);
         }
       }
     } finally {

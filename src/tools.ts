@@ -15,8 +15,9 @@ import { fileURLToPath } from "node:url";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { isCrawlRunning, killCrawl, runningCrawls } from "./engine.ts";
-import type { CrawlMonitor } from "./monitor.ts";
+import type { CrawlMonitor, WatchTarget } from "./monitor.ts";
 import { renderForModel } from "./render.ts";
+import { activeRun, collectionFor, ensureStore, prepareRun, type Store } from "./store.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const RUN_SH = path.join(HERE, "..", "scripts", "run.sh");
@@ -31,18 +32,18 @@ export function normalizeName(raw: string): string {
   return raw.trim().replace(/\.ya?ml$/, "");
 }
 
-export function configPath(cwd: string, name: string): string | undefined {
+export function configPath(store: Store, name: string): string | undefined {
   for (const ext of [".yaml", ".yml"]) {
-    const p = path.join(cwd, "config", `${name}${ext}`);
+    const p = path.join(store.configDir, `${name}${ext}`);
     if (fs.existsSync(p)) return p;
   }
   return undefined;
 }
 
-export function listConfigs(cwd: string): string[] {
+export function listConfigs(store: Store): string[] {
   try {
     return fs
-      .readdirSync(path.join(cwd, "config"))
+      .readdirSync(store.configDir)
       .filter((f) => /\.ya?ml$/.test(f))
       .map((f) => f.replace(/\.ya?ml$/, ""))
       .sort();
@@ -53,46 +54,111 @@ export function listConfigs(cwd: string): string[] {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export function createTools(monitor: CrawlMonitor, cwd: string): ToolDefinition<any, any, any>[] {
+/**
+ * Locate a crawl by the name the user said, which may be a config name, a
+ * collection name, or a legacy top-level collection.
+ */
+export function resolveTarget(store: Store, monitor: CrawlMonitor, name: string, legacy?: string): WatchTarget | undefined {
+  const config = normalizeName(name);
+
+  const file = configPath(store, config);
+  if (file) {
+    const collection = collectionFor(file, config);
+    const root = activeRun(store, config, collection);
+    if (root) return { config, collection, root };
+  }
+
+  // Already being watched, including adopted and legacy crawls.
+  const watched = monitor.watched().find((t) => t.config === config || t.collection === config);
+  if (watched) return watched;
+
+  // A finished run in the store, newest first.
+  if (file) {
+    const collection = collectionFor(file, config);
+    for (const run of runsWith(store, config, collection)) return { config, collection, root: run };
+  }
+
+  // Legacy or hand-run layout: ./collections/<name>
+  if (legacy && fs.existsSync(path.join(legacy, "collections", config))) {
+    return { config, collection: config, root: legacy };
+  }
+  return undefined;
+}
+
+function runsWith(store: Store, config: string, collection: string): string[] {
+  try {
+    return fs
+      .readdirSync(store.runsDir)
+      .filter((d) => d.startsWith(`${config}-`))
+      .sort()
+      .reverse()
+      .map((d) => path.join(store.runsDir, d))
+      .filter((r) => fs.existsSync(path.join(r, "collections", collection)));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The store is passed as an accessor, not a value: `--dir` is not parsed until
+ * session_start, well after the factory registers these tools, so capturing a
+ * Store object here would silently ignore the flag.
+ */
+export function createTools(
+  monitor: CrawlMonitor,
+  getStore: () => Store,
+  getLegacy: () => string | undefined = () => undefined,
+): ToolDefinition<any, any, any>[] {
   const runTool = defineTool({
     name: "btrix_run",
     label: "Crawl",
     description:
-      "Start a Browsertrix Crawler crawl for a config in ./config. Returns once the crawler is up and " +
+      "Start a Browsertrix Crawler crawl for a config in the btrix store. Returns once the crawler is up and " +
       "reporting; the crawl itself keeps running in the background, detached, and survives this session. " +
       "Progress is shown continuously in the TUI widget, so do not poll for it.",
     promptSnippet: "Start a Browsertrix crawl for a named config",
     parameters: Type.Object({
-      config: Type.String({ description: "Config name in ./config, without the .yaml extension" }),
+      config: Type.String({ description: "Config name in the store's config/ directory, without the .yaml extension" }),
     }),
     async execute(_id, params, signal, onUpdate) {
-      const name = normalizeName(String(params.config));
+      const store = getStore();
+      const config = normalizeName(String(params.config));
+      ensureStore(store);
 
-      if (!configPath(cwd, name)) {
-        const available = listConfigs(cwd);
+      const file = configPath(store, config);
+      if (!file) {
+        const available = listConfigs(store);
         return text(
-          `No config/${name}.yaml in ${cwd}.` +
+          `No ${config}.yaml in ${store.configDir}.` +
             (available.length ? ` Available configs: ${available.join(", ")}` : " There are no configs yet."),
         );
       }
 
-      if (await isCrawlRunning(name)) {
-        monitor.watch(name);
-        return text(`A crawl for ${name} is already running. Its progress is in the widget.`);
+      // The collection directory is named by the config's `collection:` key,
+      // which need not match the config's filename.
+      const collection = collectionFor(file, config);
+
+      if (await isCrawlRunning(config)) {
+        const running = activeRun(store, config, collection);
+        if (running) monitor.watch({ config, collection, root: running });
+        return text(`A crawl for ${config} is already running. Its progress is in the widget.`);
       }
 
-      // Detached, with its own stdio, so the crawl outlives this session.
-      fs.mkdirSync(path.join(cwd, ".btrix"), { recursive: true });
-      const logPath = path.join(cwd, ".btrix", `run-${name}.log`);
+      // Each attempt gets its own run directory, mounted at /crawls, with a
+      // copy of the config that produced it.
+      const runDir = prepareRun(store, config, new Date());
+      const target: WatchTarget = { config, collection, root: runDir };
+
+      const logPath = path.join(runDir, "runner.log");
       const out = fs.openSync(logPath, "a");
-      const child = spawn("bash", [RUN_SH, name], {
-        cwd,
+      const child = spawn("bash", [RUN_SH, config, runDir], {
+        cwd: store.root,
         detached: true,
         stdio: ["ignore", out, out],
       });
       child.unref();
       fs.closeSync(out);
-      monitor.watch(name);
+      monitor.watch(target);
 
       let exited: number | null | undefined;
       child.on("exit", (code) => {
@@ -101,19 +167,19 @@ export function createTools(monitor: CrawlMonitor, cwd: string): ToolDefinition<
 
       // Wait out the image pull and the first statistics line. This window is
       // what the tool's AbortSignal cancels; after it, the crawl is on its own.
-      onUpdate?.({ content: [{ type: "text", text: `pulling image and starting ${name}…` }], details: {} });
+      onUpdate?.({ content: [{ type: "text", text: `pulling image and starting ${config}…` }], details: {} });
       const deadline = Date.now() + STARTUP_TIMEOUT_MS;
       let announcedContainer = false;
 
       while (Date.now() < deadline) {
         if (signal?.aborted) {
-          await killCrawl(name);
-          return text(`Cancelled; stopped the ${name} crawl. Partial output is in collections/${name}/.`);
+          await killCrawl(config);
+          return text(`Cancelled; stopped the ${config} crawl. Partial output is in ${runDir}.`);
         }
-        const stats = await monitor.stats(name);
+        const stats = await monitor.stats(target);
         if (stats.crawled > 0 || stats.total > 0) {
           return {
-            content: [{ type: "text", text: `Started ${name}. ${renderForModel(stats)}` }],
+            content: [{ type: "text", text: `Started ${config}. ${renderForModel(stats)}` }],
             details: stats,
           };
         }
@@ -128,15 +194,14 @@ export function createTools(monitor: CrawlMonitor, cwd: string): ToolDefinition<
         await sleep(1_500);
       }
 
-      const stats = await monitor.stats(name);
+      const stats = await monitor.stats(target);
       return {
         content: [
           {
             type: "text",
             text:
-              `Started ${name}, but it has not reported statistics within ` +
-              `${Math.round(STARTUP_TIMEOUT_MS / 1000)}s. ${renderForModel(stats)}\n` +
-              `Runner output: ${logPath}`,
+              `Started ${config}, but it has not reported statistics within ` +
+              `${Math.round(STARTUP_TIMEOUT_MS / 1000)}s. ${renderForModel(stats)}\nRunner output: ${logPath}`,
           },
         ],
         details: stats,
@@ -153,26 +218,38 @@ export function createTools(monitor: CrawlMonitor, cwd: string): ToolDefinition<
     promptSnippet: "Read the state of a Browsertrix crawl",
     parameters: Type.Object({
       name: Type.Optional(
-        Type.String({ description: "Collection name. Defaults to the only running or watched crawl." }),
+        Type.String({ description: "Config or collection name. Defaults to the only running or watched crawl." }),
       ),
     }),
     async execute(_id, params) {
+      const store = getStore();
+      const legacy = getLegacy();
       let name = params.name ? String(params.name) : undefined;
+
       if (!name) {
         const running = (await runningCrawls()).map((c) => c.config).filter((n): n is string => !!n);
-        const candidates = running.length ? running : monitor.watched();
-        if (candidates.length === 1) name = candidates[0];
-        else if (candidates.length > 1) {
-          return text(`Several crawls to choose from: ${candidates.join(", ")}. Ask for one by name.`);
+        const candidates = running.length ? running : monitor.watched().map((t) => t.config);
+        const unique = [...new Set(candidates)];
+        if (unique.length === 1) name = unique[0];
+        else if (unique.length > 1) {
+          return text(`Several crawls to choose from: ${unique.join(", ")}. Ask for one by name.`);
         } else {
-          return text("No crawl is running and none is being watched. Name a collection explicitly.");
+          return text("No crawl is running and none is being watched. Name a config or collection explicitly.");
         }
       }
-      if (!fs.existsSync(path.join(cwd, "collections", name!))) {
-        return text(`No collections/${name} in ${cwd}. It may not have been crawled yet.`);
+
+      const target = resolveTarget(store, monitor, name!, legacy);
+      if (!target) {
+        const configs = listConfigs(store);
+        return text(
+          `Nothing crawled for ${normalizeName(name!)} yet.` +
+            (configs.includes(normalizeName(name!)) ? " The config exists — start it with btrix_run." : "") +
+            (configs.length ? ` Configs in the store: ${configs.join(", ")}` : ""),
+        );
       }
-      const stats = await monitor.stats(name!);
-      monitor.watch(name!);
+
+      const stats = await monitor.stats(target);
+      monitor.watch(target);
       return { content: [{ type: "text", text: renderForModel(stats) }], details: stats };
     },
   });

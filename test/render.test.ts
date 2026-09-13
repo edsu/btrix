@@ -60,6 +60,14 @@ describe("renderWidget", () => {
     expect(renderWidget(stats({ state: "stopped", diskFullIn: 120_000 }), plainTheme).join("\n")).not.toContain("full in");
   });
 
+  it("shows both names when the collection differs from the config", () => {
+    const diverged = stats({ name: "stanford-news", config: "sulnews" });
+    expect(renderWidget(diverged, plainTheme).join("\n")).toContain("sulnews → stanford-news");
+    expect(renderForModel(diverged)).toContain("sulnews → stanford-news");
+    // No arrow when they agree.
+    expect(renderWidget(stats({ name: "mysite", config: "mysite" }), plainTheme).join("\n")).not.toContain("→");
+  });
+
   it("drops the screencast hint once the crawl is not running", () => {
     expect(renderWidget(stats(), plainTheme).join("\n")).toContain("screencast :9037");
     expect(renderWidget(stats({ state: "done" }), plainTheme).join("\n")).not.toContain("screencast");
