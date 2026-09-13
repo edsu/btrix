@@ -64,6 +64,7 @@ describe("extension wiring", () => {
     extension(s.api);
     expect(s.tools.map((t) => t.name).sort()).toEqual([
       "btrix_list",
+      "btrix_profile",
       "btrix_review",
       "btrix_run",
       "btrix_status",

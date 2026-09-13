@@ -56,6 +56,8 @@ export async function runningCrawls(): Promise<RunningCrawl[]> {
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean)
+      // create-login-profile shares the image but is not a crawl.
+      .filter((line) => !line.includes("create-login-profile"))
       .map((line) => {
         const [id = "", command = ""] = line.split("\t");
         const m = /config\/([^/\s"']+?)\.ya?ml/.exec(command);
@@ -67,8 +69,53 @@ export async function runningCrawls(): Promise<RunningCrawl[]> {
   }
 }
 
+/**
+ * Profile-capture containers, which run `create-login-profile` rather than
+ * `crawl`. Detected separately so a login session in progress is visible and a
+ * second one cannot be started over the top of it.
+ */
+export async function runningProfileCaptures(): Promise<{ id: string; filename?: string }[]> {
+  const bin = await engine();
+  if (!bin) return [];
+  try {
+    const { stdout } = await exec(
+      bin,
+      ["ps", "--no-trunc", "--filter", `ancestor=${IMAGE}`, "--format", "{{.ID}}\t{{.Command}}"],
+      { timeout: 10_000 },
+    );
+    return stdout
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.includes("create-login-profile"))
+      .map((line) => {
+        const [id = "", command = ""] = line.split("\t");
+        const m = /profiles\/([^/\s"']+?)\.tar\.gz/.exec(command);
+        return { id, filename: m?.[1] };
+      })
+      .filter((c) => c.id);
+  } catch {
+    return [];
+  }
+}
+
 export async function isCrawlRunning(name: string): Promise<boolean> {
   return (await runningCrawls()).some((c) => c.config === name);
+}
+
+/** Stop specific containers by id. Used to wire a tool's AbortSignal. */
+export async function killContainers(ids: string[]): Promise<number> {
+  const bin = await engine();
+  if (!bin || !ids.length) return 0;
+  let killed = 0;
+  for (const id of ids) {
+    try {
+      await exec(bin, ["kill", id], { timeout: 15_000 });
+      killed++;
+    } catch {
+      // Already gone, or not ours to kill.
+    }
+  }
+  return killed;
 }
 
 /** Stop the container crawling `name`. Used to wire a tool's AbortSignal. */

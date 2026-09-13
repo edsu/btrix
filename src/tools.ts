@@ -14,10 +14,11 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { isCrawlRunning, killCrawl, runningCrawls } from "./engine.ts";
+import { isCrawlRunning, killContainers, killCrawl, runningCrawls, runningProfileCaptures } from "./engine.ts";
 import { buildInventory } from "./inventory.ts";
 import type { CrawlMonitor, WatchTarget } from "./monitor.ts";
 import { analyzePages, type PagesReport, readPages } from "./pages.ts";
+import { CONTAINER_PROFILES, findProfile, listProfiles, safeProfileName } from "./profile.ts";
 import { inventoryForModel, isLive, renderForModel, reviewForModel } from "./render.ts";
 import type { ReplayServers } from "./serve.ts";
 import { humanBytes } from "./sizes.ts";
@@ -25,6 +26,7 @@ import { activeRun, collectionFor, ensureStore, prepareRun, type Store } from ".
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const RUN_SH = path.join(HERE, "..", "scripts", "run.sh");
+const PROFILE_SH = path.join(HERE, "..", "scripts", "create-profile.sh");
 
 /** How long to wait for the image pull and first log output before returning. */
 const STARTUP_TIMEOUT_MS = 180_000;
@@ -156,7 +158,9 @@ export function createTools(
 
       const logPath = path.join(runDir, "runner.log");
       const out = fs.openSync(logPath, "a");
-      const child = spawn("bash", [RUN_SH, config, runDir], {
+      // The profiles directory is mounted in, so a config referencing
+      // /crawls/profiles/<name>.tar.gz resolves during the crawl.
+      const child = spawn("bash", [RUN_SH, config, runDir, store.profilesDir], {
         cwd: store.root,
         detached: true,
         stdio: ["ignore", out, out],
@@ -428,5 +432,152 @@ export function createTools(
     },
   });
 
-  return [runTool, statusTool, listTool, viewTool, reviewTool];
+  const profileTool = defineTool({
+    name: "btrix_profile",
+    label: "Login profile",
+    description:
+      "Start a browser, served over noVNC, in which the USER logs in to a site by hand; the resulting login " +
+      "profile is saved for authenticated crawls. Called with no url, it lists the profiles that already exist. " +
+      "You must never enter the user's credentials, and must not ask them for a password: they type it into that " +
+      "browser themselves. Relay the instructions in the result verbatim.",
+    promptSnippet: "Create or list browser login profiles for authenticated crawls",
+    parameters: Type.Object({
+      url: Type.Optional(
+        Type.String({ description: "Login page or a page on the site to authenticate against. Omit to list profiles." }),
+      ),
+      name: Type.Optional(Type.String({ description: "Profile name. Defaults to the site host." })),
+    }),
+    async execute(_id, params, signal, onUpdate) {
+      const store = getStore();
+      const existing = listProfiles(store);
+
+      if (!params.url) {
+        if (!existing.length) {
+          return text(
+            `No login profiles in ${store.profilesDir}. Call btrix_profile with the login page url to make one.`,
+          );
+        }
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `${existing.length} login profile(s) in ${store.profilesDir}:\n` +
+                existing
+                  .map(
+                    (p) =>
+                      `  ${p.name} · ${humanBytes(p.bytes)} · made ${p.modified?.toISOString().slice(0, 10) ?? "?"} · ` +
+                      `use with  profile: ${p.configValue}`,
+                  )
+                  .join("\n") +
+                "\n\nSession cookies expire, so an old profile may no longer be logged in; remake it if a crawl " +
+                "comes back with login pages.",
+            },
+          ],
+          details: existing,
+        };
+      }
+
+      let url: URL;
+      try {
+        url = new URL(String(params.url));
+      } catch {
+        return text(`"${params.url}" is not a url. Give the login page, for example https://example.org/login.`);
+      }
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        return text("Only http and https urls can be used for a login profile.");
+      }
+      // Credentials in a url would end up in the container command line, in
+      // `docker ps`, and in this session's transcript.
+      if (url.username || url.password) {
+        return text(
+          "That url contains credentials. Give the plain login page url instead — you will type your username " +
+            "and password into the browser yourself, and btrix never handles them.",
+        );
+      }
+
+      const requested = params.name ? String(params.name) : url.host.replace(/^www\./, "");
+      const name = safeProfileName(requested);
+      if (!name) {
+        return text(
+          `"${requested}" is not usable as a profile name. Use letters, numbers, dots, dashes or underscores.`,
+        );
+      }
+
+      const already = findProfile(store, name);
+      const inFlight = await runningProfileCaptures();
+      if (inFlight.length) {
+        return text(
+          `A profile browser is already running (port 6080 is in use by it). Finish or stop that one first` +
+            (inFlight[0]?.filename ? `: it is capturing "${inFlight[0].filename}".` : "."),
+        );
+      }
+
+      ensureStore(store);
+      fs.mkdirSync(store.profilesDir, { recursive: true, mode: 0o700 });
+
+      const logPath = path.join(store.profilesDir, `.${name}.log`);
+      const out = fs.openSync(logPath, "a");
+      const child = spawn("bash", [PROFILE_SH, url.toString(), store.profilesDir, name], {
+        cwd: store.root,
+        detached: true,
+        stdio: ["ignore", out, out],
+      });
+      child.unref();
+      fs.closeSync(out);
+
+      let exited: number | null | undefined;
+      child.on("exit", (code) => {
+        exited = code;
+      });
+
+      onUpdate?.({ content: [{ type: "text", text: "pulling image and starting the browser…" }], details: {} });
+
+      // Wait only for the browser to be reachable. The login itself takes as
+      // long as it takes, and is not something to hold a tool call open for.
+      const deadline = Date.now() + STARTUP_TIMEOUT_MS;
+      let up = false;
+      while (Date.now() < deadline) {
+        if (signal?.aborted) {
+          // Whatever came up under us is the capture we started.
+          await killContainers((await runningProfileCaptures()).map((c) => c.id));
+          return text("Cancelled; stopped the profile browser.");
+        }
+        if ((await runningProfileCaptures()).length) {
+          up = true;
+          break;
+        }
+        if (exited !== undefined && exited !== 0) {
+          const tail = fs.readFileSync(logPath, "utf8").trim().split("\n").slice(-12).join("\n");
+          return text(`The profile browser exited with code ${exited}:\n\n${tail}`);
+        }
+        await sleep(1_500);
+      }
+
+      const target = path.join(store.profilesDir, `${name}.tar.gz`);
+      const instructions = [
+        up
+          ? `A browser is running for ${url.host}. Hand these steps to the user:`
+          : `The profile browser is starting for ${url.host} (it may still be pulling the image). Hand these steps to the user:`,
+        "",
+        "  1. Open http://localhost:6080 in your browser.",
+        "  2. Log in to the site yourself, in that window. Complete any two-factor step.",
+        "  3. Use the on-screen control to save the profile.",
+        "",
+        `It will be written to ${target}.`,
+        `Then add this to the crawl config:  profile: ${CONTAINER_PROFILES}/${name}.tar.gz`,
+        "",
+        "Do not type the user's password for them and do not ask for it — they enter it in that browser.",
+        "The profile contains session cookies, so it is a credential: the store's .gitignore keeps it out of",
+        "version control, and it should not be shared or copied between machines.",
+        already ? `\nNote: a profile called ${name} already exists and will be replaced when this one is saved.` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      return { content: [{ type: "text", text: instructions }], details: { name, target, url: url.toString() } };
+    },
+  });
+
+  return [runTool, statusTool, listTool, viewTool, reviewTool, profileTool];
 }

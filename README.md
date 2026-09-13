@@ -85,6 +85,7 @@ profiles stay out of version control while `config/` remains yours to commit.
 | "how's it going?" | `btrix_status` — but you usually won't need to ask, the widget is already showing it |
 | "what do I have?" | `btrix_list` — configs, runs and their state, archives, failed runs, free space |
 | "did that crawl work?" | `btrix_review` — what was actually captured, as candidates to judge |
+| "this site needs a login" | `btrix_profile` — starts a browser **you** log into; btrix never sees the password |
 | "replay stanford-news" | `btrix_view` serves the archive and hands you a ReplayWeb.page link |
 | `/btrix [name]` | Repaint the widget, or show the inventory, by hand. No model turn |
 
@@ -163,6 +164,7 @@ turn announcing the result.
 |---|---|
 | `src/inventory.ts` | "What do I have here?" as data: configs, runs, archives, orphans, free space |
 | `src/pages.ts` | Summarises the crawler's page index: statuses, hosts, repeated titles, thin pages |
+| `src/profile.ts` | Login profiles: listing them, and names that cannot escape the store |
 | `src/serve.ts` | Local replay server: HTTP ranges (including the suffix form) and CORS, in-process |
 | `src/config.ts` | The few config keys btrix needs, read line-wise rather than via a YAML dependency |
 | `src/store.ts` | Where files live: `--dir` / `$BTRIX_DIR` / `./btrix`, run directories, the `collection:` key |
@@ -181,7 +183,8 @@ turn announcing the result.
 | `test/fixtures/*.log` | Real crawl logs, so the parser is tested against what browsertrix actually emits |
 | `skills/behaviors/` | Writing and debugging custom crawl behaviors — carried over unchanged |
 | `skills/replay/` | Diagnosing replay failures: Chrome's local-network prompt, service workers, search |
-| `skills/new-crawl/` | Choosing scope, limits and delays; when a site needs a behavior or a login |
+| `skills/new-crawl/` | Choosing scope, limits and delays; when a site needs a behavior. Carries the config template |
+| `skills/login-profile/` | Authenticated crawls: making a profile, and why a logged-in crawl captured login pages |
 
 Container invocation stays in shell on purpose: its whole job is picking an
 engine and assembling flags, and a rewrite would only cost you a
@@ -192,7 +195,7 @@ earn it.
 
 ```bash
 npm install
-npm test          # 119 tests, no container or model needed
+npm test          # 129 tests, no container or model needed
 npm run btrix     # run it here; the store lands in ./btrix (gitignored)
 npm link          # put `btrix` on your PATH, running this working tree
 npm run check     # tsc --noEmit
@@ -233,16 +236,26 @@ Then ask it to crawl `example`, and check the things that are the whole point:
 - the WACZ ends up in `btrix/out/` with its `.btrix.json` sidecar;
 - `btrix_view` serves it and ReplayWeb.page replays it through the link.
 
+## Credentials
+
+btrix never handles a password. `btrix_profile` starts a browser served over
+noVNC; you log in there yourself, and the resulting profile — a tarball of
+browser state including session cookies — is saved into the store. It is a
+credential, so `profiles/` is mode 0700, is in the store's own `.gitignore`,
+and is mounted **read-only** into a crawl. A url containing credentials is
+refused rather than passed to a container command line where `docker ps` would
+show it.
+
 ## Status
 
-`run`, `status`, `list`, `view` and `review`, over a self-contained store,
-installable as a standalone command. No Python: replay serving is in-process
-Node, and `node src/serve.ts <dir> [port]` covers serving a WACZ from outside
-the store by hand.
+All six tools: `run`, `status`, `list`, `view`, `review` and `profile`, over a
+self-contained store, installable as a standalone command. No Python: replay
+serving is in-process Node, and `node src/serve.ts <dir> [port]` covers serving
+a WACZ from outside the store by hand.
 
-Still missing: `btrix_profile`, for crawling sites behind a login. Until it
-exists, a logged-in capture needs a profile made with browsertrix-crawler's own
-`create-login-profile` and a config pointing at it.
+Writing configs stays a conversation rather than a tool — scope is the decision
+that most affects what you get — with the detail and a template in the
+`new-crawl` skill.
 
 One pi-ism remains deliberately visible: signing in is `/login`, because it is a
 built-in command, extension commands that collide with a built-in name are

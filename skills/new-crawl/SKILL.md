@@ -17,8 +17,9 @@ seeds:
   - url: https://library.stanford.edu/news
 ```
 
-`assets/config-template.yaml` in the btrix installation is a starting point.
-Keep configs minimal — only the keys that are actually needed.
+[`assets/config-template.yaml`](assets/config-template.yaml) next to this skill
+is a starting point. Keep configs minimal — only the keys that are actually
+needed.
 
 Three decisions cannot be revisited without re-crawling, so settle them first.
 
@@ -92,11 +93,17 @@ archiving is authorised. Do not try to evade bot protection.
 
 ## Sites behind a login
 
-`btrix_profile` is not implemented yet. For now a logged-in capture needs a
-browser profile made with browsertrix-crawler's own `create-login-profile`
-tool, and the config pointed at it with `profile:`. Say so plainly rather than
-attempting a workaround; credentials in a config file is not an acceptable
-substitute.
+Use `btrix_profile <login-url>`. It starts a browser the **user** logs into by
+hand, and saves a profile; then the config references it:
+
+```yaml
+profile: /crawls/profiles/example.org.tar.gz
+```
+
+Never type the user's credentials, never ask for a password, and never put
+credentials in a config file. See the **login-profile** skill for what to do
+when the browser will not load, or when a crawl of a logged-in site comes back
+full of login pages.
 
 ## After writing one
 
