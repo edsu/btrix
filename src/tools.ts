@@ -52,9 +52,12 @@ const STARTUP_TIMEOUT_MS = 180_000;
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: {} });
 
-/** Accept "sulnews", "sulnews.yaml" or "sulnews.yml" alike. */
+/**
+ * Accept "sulnews", "sulnews.yaml" or "sulnews.yml" alike, and tolerate a
+ * leading "@" in case the completion trigger comes along for the ride.
+ */
 export function normalizeName(raw: string): string {
-  return raw.trim().replace(/\.ya?ml$/, "");
+  return raw.trim().replace(/^@/, "").replace(/\.ya?ml$/, "");
 }
 
 export function configPath(store: Store, name: string): string | undefined {

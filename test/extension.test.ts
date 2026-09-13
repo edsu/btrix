@@ -21,10 +21,13 @@ function stubApi() {
   const entries: any[] = [];
 
   const flags = new Map<string, any>();
+  const shortcuts = new Map<string, any>();
 
   const api = {
     registerTool: (t: any) => tools.push(t),
     registerFlag: (name: string, opts: any) => flags.set(name, opts),
+    registerShortcut: (key: string, opts: any) => shortcuts.set(key, opts),
+    exec: async () => ({ stdout: "", stderr: "", code: 0, killed: false }),
     getFlag: (name: string) => flags.get(name)?.value,
     registerCommand: (name: string, opts: any) => commands.set(name, opts),
     registerEntryRenderer: (type: string, r: any) => entryRenderers.set(type, r),
@@ -37,7 +40,7 @@ function stubApi() {
     appendEntry: (type: string, data: any) => entries.push({ type, data }),
   } as unknown as ExtensionAPI;
 
-  return { api, tools, commands, events, entryRenderers, messages, entries, flags };
+  return { api, tools, commands, events, entryRenderers, messages, entries, flags, shortcuts };
 }
 
 function stubCtx(overrides: Record<string, unknown> = {}) {
@@ -51,6 +54,7 @@ function stubCtx(overrides: Record<string, unknown> = {}) {
       setTitle: vi.fn(),
       setWidget: vi.fn(),
       setStatus: vi.fn(),
+      addAutocompleteProvider: vi.fn(),
       notify: vi.fn(),
       confirm: vi.fn().mockResolvedValue(true),
     },
@@ -83,6 +87,15 @@ describe("extension wiring", () => {
     const s = stubApi();
     extension(s.api);
     expect(s.flags.get("dir")).toMatchObject({ type: "string" });
+  });
+
+  it("registers shortcuts for the things you would otherwise hunt for", () => {
+    const s = stubApi();
+    extension(s.api);
+    // Opening a replay link or the live screencast should not need copying a
+    // url out of the transcript.
+    expect([...s.shortcuts.keys()].sort()).toEqual(["ctrl+g", "ctrl+r"]);
+    for (const opts of s.shortcuts.values()) expect(opts.description).toContain("btrix");
   });
 
   it("registers the command, the summary renderer and the lifecycle handlers", () => {
@@ -184,5 +197,26 @@ describe("--dir reaches the tools", () => {
     monitor.dispose();
     // The message names the new store, proving the accessor was consulted.
     expect(result.content[0].text).toContain("ghost");
+  });
+});
+
+describe("name completion is offered", () => {
+  it("registers an @ provider that completes and applies", async () => {
+    const s = stubApi();
+    extension(s.api);
+    const ctx = stubCtx();
+    await s.events.get("session_start")![0]!({}, ctx);
+
+    expect(ctx.ui.addAutocompleteProvider).toHaveBeenCalledOnce();
+    const provider = (ctx.ui.addAutocompleteProvider as any).mock.calls[0][0]();
+    expect(provider.triggerCharacters).toEqual(["@"]);
+
+    // No @token at the cursor means no suggestions rather than a stray popup.
+    expect(await provider.getSuggestions(["crawl sulnews"], 0, 13, { signal: new AbortController().signal })).toBeNull();
+
+    // And the apply step is wired to the pure implementation.
+    expect(provider.applyCompletion(["crawl @s"], 0, 8, { value: "sulnews", label: "sulnews" }, "@s").lines[0]).toBe(
+      "crawl sulnews",
+    );
   });
 });

@@ -207,3 +207,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       "or drag the .wacz onto https://replayweb.page instead.\n",
   );
 }
+
+/** The .wacz files a served directory offers. */
+export function listArchiveFiles(dir: string): string[] {
+  try {
+    return fs.readdirSync(dir).filter((f) => f.endsWith(".wacz")).sort();
+  } catch {
+    return [];
+  }
+}

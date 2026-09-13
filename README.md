@@ -86,8 +86,12 @@ profiles stay out of version control while `config/` remains yours to commit.
 | "what do I have?" | `btrix_list` — configs, runs and their state, archives, failed runs, free space |
 | "did that crawl work?" | `btrix_review` — what was actually captured, as candidates to judge |
 | "this site needs a login" | `btrix_profile` — starts a browser **you** log into; btrix never sees the password |
+| "stop it" | `btrix_stop` — asks the crawler to shut down, so what it captured stays usable |
+| "what's taking space?" | `btrix_clean` — reports old run directories; deletes only when you say so |
 | "replay stanford-news" | `btrix_view` serves the archive and hands you a ReplayWeb.page link |
 | `/btrix [name]` | Repaint the widget, or show the inventory, by hand. No model turn |
+| `@` | Completes config, collection, archive and profile names from the store |
+| `ctrl+r` / `ctrl+g` | Open the replay link, or the live crawl screencast |
 
 The widget looks like this, repainting once a second:
 
@@ -158,6 +162,51 @@ the config that produced it, the crawler version, page counts and any warnings
 a summary card (which never enters the model's context) and exactly one model
 turn announcing the result.
 
+## What owning the interface buys
+
+Two things became free, and most of the interface follows from them.
+
+**Facts can go on screen without spending a turn.** The crawl widget, the
+inventory table, the review card and the startup summary all render themselves.
+Tool results use pi's `renderResult`, so `btrix_list` draws its own table
+instead of handing prose to the model to read back. Progress also goes in the
+terminal title, so a multi-hour crawl is legible from a backgrounded tab, and a
+native terminal notification fires when one finishes — into the window you are
+actually looking at.
+
+**Questions can be asked without spending a turn.** So the most expensive
+mistake in this domain gets caught at the only moment it is cheap:
+
+```
+Crawl sulnews?
+
+  scope   host — every page on library.stanford.edu
+  limit   none
+
+This could run for hours and put real load on the site.
+  [Crawl anyway]  [Cancel and add a page limit]
+```
+
+Declining blocks the crawl and tells the model *why*, so it can suggest the fix
+rather than just reporting a refusal.
+
+## Startup
+
+btrix says three lines before you ask anything, chosen by whether they would
+change what you do next:
+
+```
+btrix · ./btrix · 39G free · anthropic/claude-opus-5
+  2 configs · 1 archive 40M · 1 login profile(s)
+  still crawling: sulnews — progress below
+  ⚠ 3 failed run(s) holding 2.1G — ask me to clear them
+```
+
+The important one is invisible when it passes: whether Docker exists and its
+daemon is up. Learning that here beats learning it several minutes into a
+2.4GB image pull, and it is the likeliest reason btrix does nothing useful on a
+fresh machine.
+
 ## Layout
 
 | Path | What |
@@ -165,6 +214,10 @@ turn announcing the result.
 | `src/inventory.ts` | "What do I have here?" as data: configs, runs, archives, orphans, free space |
 | `src/pages.ts` | Summarises the crawler's page index: statuses, hosts, repeated titles, thin pages |
 | `src/profile.ts` | Login profiles: listing them, and names that cannot escape the store |
+| `src/confirm.ts` | Scope in plain words, and the questions worth asking before a crawl |
+| `src/complete.ts` | `@` name completion, sourced from the inventory |
+| `src/clean.ts` | Planning and applying cleanup, with guards on what must never be deleted |
+| `src/notify.ts` | Terminal notifications, on terminals known to understand them |
 | `src/serve.ts` | Local replay server: HTTP ranges (including the suffix form) and CORS, in-process |
 | `src/config.ts` | The few config keys btrix needs, read line-wise rather than via a YAML dependency |
 | `src/store.ts` | Where files live: `--dir` / `$BTRIX_DIR` / `./btrix`, run directories, the `collection:` key |
@@ -195,7 +248,7 @@ earn it.
 
 ```bash
 npm install
-npm test          # 129 tests, no container or model needed
+npm test          # 171 tests, no container or model needed
 npm run btrix     # run it here; the store lands in ./btrix (gitignored)
 npm link          # put `btrix` on your PATH, running this working tree
 npm run check     # tsc --noEmit
@@ -248,8 +301,8 @@ show it.
 
 ## Status
 
-All six tools: `run`, `status`, `list`, `view`, `review` and `profile`, over a
-self-contained store, installable as a standalone command. No Python: replay
+Eight tools: `run`, `stop`, `status`, `list`, `view`, `review`, `profile` and
+`clean`, over a self-contained store, installable as a standalone command. No Python: replay
 serving is in-process Node, and `node src/serve.ts <dir> [port]` covers serving
 a WACZ from outside the store by hand.
 

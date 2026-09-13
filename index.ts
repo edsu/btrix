@@ -17,13 +17,17 @@ import { finishRun, type Outcome } from "./src/finish.ts";
 import { CrawlMonitor, type WatchTarget } from "./src/monitor.ts";
 import { notifyDesktop } from "./src/notify.ts";
 import { renderForModel, renderInventory, renderWidget, startupLines } from "./src/render.ts";
-import { ReplayServers } from "./src/serve.ts";
+import { listArchiveFiles, ReplayServers } from "./src/serve.ts";
 import { humanBytes } from "./src/sizes.ts";
 import type { CrawlStats } from "./src/stats.ts";
 import { activeRun, collectionFor, legacyRoot, resolveStore, type Store } from "./src/store.ts";
+import { applyNameCompletion, filterSuggestions, nameSuggestions, tokenBeforeCursor } from "./src/complete.ts";
+import { readConfig } from "./src/config.ts";
+import { confirmCrawl } from "./src/confirm.ts";
 import { engineStatus } from "./src/engine.ts";
 import { firstRunPanel, probeAuth, readyHeader } from "./src/firstrun.ts";
 import { buildInventory } from "./src/inventory.ts";
+import { listProfiles } from "./src/profile.ts";
 import { configPath, createTools, listConfigs } from "./src/tools.ts";
 
 /** Free space below which starting a crawl is worth a confirmation. */
@@ -161,6 +165,47 @@ export default function (pi: ExtensionAPI) {
     return undefined;
   };
 
+  /**
+   * Open a url in the desktop browser. Only ever localhost and replayweb.page,
+   * and only when the user pressed the key.
+   */
+  const openUrl = async (url: string): Promise<void> => {
+    const opener =
+      process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+    await pi.exec(opener, [url], { timeout: 5_000 }).catch(() => undefined);
+  };
+
+  pi.registerShortcut("ctrl+r", {
+    description: "btrix: open the replay link for the running replay server",
+    handler: async (ctx) => {
+      const live = servers.running();
+      if (!live.length) {
+        ctx.ui.notify("No replay server running — ask to replay an archive first.", "info");
+        return;
+      }
+      const server = live[0]!;
+      const archives = listArchiveFiles(server.dir);
+      if (!archives.length) {
+        ctx.ui.notify("Nothing to replay in the served directory.", "warning");
+        return;
+      }
+      const file = archives.length === 1 ? archives[0]! : await ctx.ui.select("Replay which archive?", archives);
+      if (!file) return;
+      await openUrl(server.url(file));
+    },
+  });
+
+  pi.registerShortcut("ctrl+g", {
+    description: "btrix: open the live crawl screencast",
+    handler: async (ctx) => {
+      if (!monitor.watched().length) {
+        ctx.ui.notify("No crawl is running.", "info");
+        return;
+      }
+      await openUrl("http://localhost:9037/");
+    },
+  });
+
   /** Manual readout, rendered for the human without involving the model. */
   pi.registerCommand("btrix", {
     description: "Show Browsertrix crawl progress in the widget (no model turn)",
@@ -215,6 +260,26 @@ export default function (pi: ExtensionAPI) {
     const adopted = await monitor.adoptRunning(targetFor);
     if (adopted.length) await monitor.tick();
 
+    if (ctx.hasUI) {
+      // Complete crawl names on `@`, from the inventory. Rebuilt per query
+      // rather than cached: a crawl finishing changes what the names mean.
+      ctx.ui.addAutocompleteProvider(() => ({
+        triggerCharacters: ["@"],
+        async getSuggestions(lines, cursorLine, cursorCol) {
+          const before = (lines[cursorLine] ?? "").slice(0, cursorCol);
+          const token = tokenBeforeCursor(before);
+          if (token === undefined) return null;
+          const inv = await buildInventory(store, legacy);
+          const items = filterSuggestions(nameSuggestions(inv, listProfiles(store)), token).slice(0, 20);
+          if (!items.length) return null;
+          return { items, prefix: `@${token}` };
+        },
+        applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
+          return applyNameCompletion(lines, cursorLine, cursorCol, item.value, prefix);
+        },
+      }));
+    }
+
     if (ctx.hasUI && auth.ready) {
       ctx.ui.setStatus("btrix", ctx.ui.theme.fg("dim", readyHeader(auth, store.root)[1] ?? ""));
 
@@ -252,18 +317,29 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("tool_call", async (event, ctx) => {
     if (event.toolName !== "btrix_run") return undefined;
-    const config = String((event.input as { config?: unknown }).config ?? "");
-    const target = targetFor(config);
-    const stats = target ? await monitor.stats(target).catch(() => undefined) : undefined;
-    const free = stats?.free;
-    if (free !== undefined && free < LOW_DISK_BYTES) {
-      const msg = `Only ${humanBytes(free)} free. Browsertrix aborts outright when the disk fills mid-crawl.`;
-      if (!ctx.hasUI) return { block: true, reason: msg };
-      if (!(await ctx.ui.confirm("Low disk space", `${msg}\n\nStart the crawl anyway?`))) {
-        return { block: true, reason: "Blocked: not enough free disk space" };
+
+    const name = String((event.input as { config?: unknown }).config ?? "").replace(/\.ya?ml$/, "");
+    const file = configPath(store, name);
+    if (!file) return undefined; // The tool reports a missing config better than we can.
+
+    const config = readConfig(file, name);
+    const inv = await buildInventory(store, legacy).catch(() => undefined);
+
+    if (!ctx.hasUI) {
+      // No dialog available, so apply the same judgements without asking.
+      if (inv?.free !== undefined && inv.free < LOW_DISK_BYTES) {
+        return { block: true, reason: `Only ${humanBytes(inv.free)} free; the crawler aborts when the disk fills.` };
       }
+      return undefined;
     }
-    return undefined;
+
+    const verdict = await confirmCrawl(
+      { select: (t, o) => ctx.ui.select(t, o), confirm: (t, m) => ctx.ui.confirm(t, m) },
+      config,
+      inv?.free,
+      LOW_DISK_BYTES,
+    );
+    return verdict.proceed ? undefined : { block: true, reason: verdict.reason };
   });
 
   // Idempotent: stop rendering, but leave the containers running. A detached
