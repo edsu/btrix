@@ -104,6 +104,7 @@ profiles stay out of version control while `config/` remains yours to commit.
 | "did that crawl work?" | `btrix_review` — what was actually captured, as candidates to judge |
 | "this site needs a login" | `btrix_profile` — starts a browser **you** log into; btrix never sees the password |
 | "stop it" | `btrix_stop` — asks the crawler to shut down, so what it captured stays usable |
+| "why did this site only give me one page?" | `btrix_browser` + `btrix_eval` — a real browser to work out a behavior in |
 | "what's taking space?" | `btrix_clean` — reports old run directories; deletes only when you say so |
 | "replay stanford-news" | `btrix_view` serves the archive and hands you a ReplayWeb.page link |
 | `/btrix [name]` | Repaint the widget, or show the inventory, by hand. No model turn |
@@ -235,6 +236,8 @@ fresh machine.
 | `src/complete.ts` | `@` name completion, sourced from the inventory |
 | `src/clean.ts` | Planning and applying cleanup, with guards on what must never be deleted |
 | `src/notify.ts` | Terminal notifications, on terminals known to understand them |
+| `src/cdp.ts` | Talks to the container's Chrome over DevTools, from inside the container |
+| `src/browser.ts` | The scratch browser: a real Chrome on a page, for working out a behavior |
 | `src/serve.ts` | Local replay server: HTTP ranges (including the suffix form) and CORS, in-process |
 | `src/config.ts` | The few config keys btrix needs, read line-wise rather than via a YAML dependency |
 | `src/store.ts` | Where files live: `--dir` / `$BTRIX_DIR` / `./btrix`, run directories, the `collection:` key |
@@ -265,7 +268,7 @@ earn it.
 
 ```bash
 npm install
-npm test          # 171 tests, no container or model needed
+npm test          # 190 tests, no container or model needed
 npm run btrix     # run it here; the store lands in ./btrix (gitignored)
 npm link          # put `btrix` on your PATH, running this working tree
 npm run check     # tsc --noEmit
@@ -306,6 +309,30 @@ Then ask it to crawl `example`, and check the things that are the whole point:
 - the WACZ ends up in `btrix/out/` with its `.btrix.json` sidecar;
 - `btrix_view` serves it and ReplayWeb.page replays it through the link.
 
+## Writing a behavior against a real page
+
+Sites whose content appears only after a click need a custom behavior, and
+writing one by guessing at selectors and running a crawl to find out is the
+slowest loop in this tool. `btrix_browser` opens a real Chrome — the same one
+the crawler uses, in the same container — on the page, watchable and clickable
+at `localhost:6080`. `btrix_eval` then runs expressions against it:
+
+```
+document.querySelectorAll('.load-more').length   => 1
+document.querySelectorAll('article').length      => 20
+document.querySelector('.load-more').click()     => clicked
+document.querySelectorAll('article').length      => 40
+```
+
+Which answers what a behavior is built from: does the control exist, what does
+it match, does clicking it add items, how many per click. `console.log` comes
+back too, the same channel a behavior reports on.
+
+It is a throwaway browser in a container, never yours, and it saves nothing.
+Chrome binds its DevTools port to loopback inside the container, so btrix talks
+to it by running a small client in there over `exec` — which is why no port
+beyond noVNC is published.
+
 ## Credentials
 
 btrix never handles a password. `btrix_profile` starts a browser served over
@@ -318,8 +345,9 @@ show it.
 
 ## Status
 
-Eight tools: `run`, `stop`, `status`, `list`, `view`, `review`, `profile` and
-`clean`, over a self-contained store, installable as a standalone command. No Python: replay
+Ten tools: `run`, `stop`, `status`, `list`, `view`, `review`, `profile`,
+`clean`, `browser` and `eval`, over a self-contained store, installable as a
+standalone command. No Python: replay
 serving is in-process Node, and `node src/serve.ts <dir> [port]` covers serving
 a WACZ from outside the store by hand.
 

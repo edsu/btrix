@@ -67,7 +67,9 @@ describe("extension wiring", () => {
     const s = stubApi();
     extension(s.api);
     expect(s.tools.map((t) => t.name).sort()).toEqual([
+      "btrix_browser",
       "btrix_clean",
+      "btrix_eval",
       "btrix_list",
       "btrix_profile",
       "btrix_review",

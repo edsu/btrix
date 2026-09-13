@@ -101,6 +101,46 @@ grep -o '"url": *"[^"]*"' collections/<name>/pages/extraPages.jsonl
 
 - [`assets/behavior-template.js`](assets/behavior-template.js) — a starting-point
   behavior with the addLink pattern baked in.
+## Working it out in a real browser first
+
+Do not write a behavior by guessing at selectors and running a crawl to find
+out. `btrix_browser` opens a real Chrome, inside the crawler's own container,
+on the page in question:
+
+```
+btrix_browser  url=https://example.org/news
+```
+
+Watch and click it at <http://localhost:6080>. Then `btrix_eval` runs
+expressions against that live page, so the loop is seconds instead of a crawl:
+
+```
+btrix_eval  js=document.querySelectorAll('.load-more').length
+  => 1
+btrix_eval  js=document.querySelectorAll('article').length
+  => 20
+btrix_eval  js=(() => { document.querySelector('.load-more').click(); return 'clicked' })()
+  => "clicked"
+btrix_eval  js=document.querySelectorAll('article').length
+  => 40
+```
+
+That sequence answers the questions a behavior is built from: does the control
+exist, what does it match, does clicking it actually add items, and how many
+per click. `console.log` from evaluated code comes back too, which is the same
+channel a behavior reports on.
+
+Three things to know about it:
+
+- It is the **same Chrome the crawler uses**, in the same container, so a
+  selector that works here works in a crawl. It is not the user's own browser,
+  and nothing is saved.
+- It is a **throwaway**: one page at a time, closed when the session ends.
+- It cannot run a behavior *class* as the crawler would — there is no behavior
+  API shim in there. Work out the selectors and the interaction here, then put
+  them in the behavior and run a small crawl (`pageLimit: 2`) to check the real
+  thing, reading `behaviorScriptCustom` lines from the log.
+
 - **Serving a WACZ for replay** — a Range + CORS static server
   for loading a large local `.wacz` into ReplayWeb.page:
   Use `btrix_view` for an archive in the store. For a WACZ anywhere else, run

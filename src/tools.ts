@@ -37,6 +37,7 @@ import {
   renderWidget,
   reviewForModel,
 } from "./render.ts";
+import type { ScratchBrowser } from "./browser.ts";
 import type { ReplayServers } from "./serve.ts";
 import { linesComponent } from "./tui.ts";
 import { humanBytes } from "./sizes.ts";
@@ -137,6 +138,7 @@ export function createTools(
   getStore: () => Store,
   getLegacy: () => string | undefined = () => undefined,
   servers?: ReplayServers,
+  browser?: ScratchBrowser,
 ): ToolDefinition<any, any, any>[] {
   const runTool = defineTool({
     name: "btrix_run",
@@ -750,5 +752,111 @@ export function createTools(
     },
   });
 
-  return [runTool, statusTool, listTool, viewTool, reviewTool, profileTool, stopTool, cleanTool];
+  const browserTool = defineTool({
+    name: "btrix_browser",
+    label: "Scratch browser",
+    description:
+      "Open a real browser on a page, inside the crawler's own container, for working out what a custom behavior " +
+      "needs to do. Watch and click it at the noVNC url in the result. This is a throwaway browser for " +
+      "experimenting — it is not the user's own browser, and it saves nothing. Call with no url to see what it " +
+      "currently has open, or stop set to true to close it.",
+    promptSnippet: "Open a real browser on a page to work out a behavior",
+    parameters: Type.Object({
+      url: Type.Optional(Type.String({ description: "Page to open. Omit to report what is already open." })),
+      stop: Type.Optional(Type.Boolean({ description: "Close the browser." })),
+    }),
+    async execute(_id, params, _signal, onUpdate) {
+      if (!browser) return text("The scratch browser is unavailable: no browser manager was wired up.");
+
+      if (params.stop) {
+        if (!browser.isRunning()) return text("No scratch browser is running.");
+        await browser.stop();
+        return text("Closed the scratch browser.");
+      }
+
+      if (!params.url) {
+        if (!browser.isRunning()) {
+          return text("No scratch browser is running. Call btrix_browser with a url to start one.");
+        }
+        const info = await browser.info();
+        return info.ok
+          ? text(`The scratch browser has ${info.url} open ("${info.title}"). Watch it at ${browser.vncUrl()}`)
+          : text(`The scratch browser is not answering: ${info.error}`);
+      }
+
+      let url: URL;
+      try {
+        url = new URL(String(params.url));
+      } catch {
+        return text(`"${params.url}" is not a url.`);
+      }
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        return text("Only http and https urls can be opened.");
+      }
+
+      const engine = await engineStatus();
+      if (!engine.usable) return text(engine.problem ?? "No container engine available.");
+
+      const opened = await browser.open(url.toString(), (note) =>
+        onUpdate?.({ content: [{ type: "text", text: note }], details: {} }),
+      );
+      if (!opened.ok) return text(`Could not open the browser: ${opened.error}`);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              `Open on ${opened.url} ("${opened.title}"). Watch and click it at ${browser.vncUrl()}\n` +
+              "Use btrix_eval to try selectors and interaction code against this page.",
+          },
+        ],
+        details: { url: opened.url, title: opened.title, vnc: browser.vncUrl() },
+      };
+    },
+  });
+
+  const evalTool = defineTool({
+    name: "btrix_eval",
+    label: "Evaluate",
+    description:
+      "Evaluate a JavaScript expression in the scratch browser's open page and return its value plus anything it " +
+      "logged to the console. This is how to work out a behavior: count what a selector matches, click something " +
+      "and count again, read scrollHeight. It runs only in that throwaway container browser, never in the user's " +
+      "own browser and never on their machine.",
+    promptSnippet: "Evaluate JavaScript in the scratch browser's page",
+    promptGuidelines: [
+      "Use btrix_eval to check a selector against the real page before putting it in a behavior.",
+    ],
+    parameters: Type.Object({
+      js: Type.String({ description: "An expression. Wrap statements in an IIFE and return a value." }),
+    }),
+    async execute(_id, params) {
+      if (!browser) return text("The scratch browser is unavailable: no browser manager was wired up.");
+      if (!browser.isRunning()) {
+        return text("No scratch browser is running. Open a page with btrix_browser first.");
+      }
+
+      const r = await browser.eval(String(params.js));
+      const parts: string[] = [];
+      if (r.ok) parts.push(`=> ${JSON.stringify(r.value) ?? "undefined"}`);
+      else parts.push(`threw: ${r.error ?? "unknown error"}`);
+      if (r.console.length) parts.push(`console:\n${r.console.map((l) => `  ${l}`).join("\n")}`);
+      if (r.url) parts.push(`page: ${r.url}`);
+      return { content: [{ type: "text", text: parts.join("\n") }], details: r };
+    },
+  });
+
+  return [
+    runTool,
+    statusTool,
+    listTool,
+    viewTool,
+    reviewTool,
+    profileTool,
+    stopTool,
+    cleanTool,
+    browserTool,
+    evalTool,
+  ];
 }

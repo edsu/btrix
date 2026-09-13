@@ -14,6 +14,7 @@
 import { Box, Text } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { finishRun, type Outcome } from "./src/finish.ts";
+import { ScratchBrowser, VNC_PORT } from "./src/browser.ts";
 import { CrawlMonitor, type WatchTarget } from "./src/monitor.ts";
 import { notifyDesktop } from "./src/notify.ts";
 import { renderForModel, renderInventory, renderWidget, startupLines } from "./src/render.ts";
@@ -121,12 +122,16 @@ export default function (pi: ExtensionAPI) {
   // Replay servers are session-scoped: unlike a crawl, a stray HTTP server
   // serving your archives after you quit is not something anyone wants.
   const servers = new ReplayServers();
+  // Same lifecycle reasoning as the replay servers: a crawl is detached because
+  // it should outlive the session, a stray Chrome should not.
+  const browser = new ScratchBrowser();
 
   for (const tool of createTools(
     monitor,
     () => store,
     () => legacy,
     servers,
+    browser,
   )) {
     pi.registerTool(tool);
   }
@@ -322,10 +327,12 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("tool_result", async (_event, ctx) => {
+    if (!ctx.hasUI) return undefined;
+    const bits: string[] = [];
     const live = servers.running();
-    if (live.length && ctx.hasUI) {
-      ctx.ui.setStatus("btrix-replay", ctx.ui.theme.fg("dim", `replay :${live.map((s) => s.port).join(",")}`));
-    }
+    if (live.length) bits.push(`replay :${live.map((s) => s.port).join(",")}`);
+    if (browser.isRunning()) bits.push(`browser :${VNC_PORT}`);
+    ctx.ui.setStatus("btrix-replay", bits.length ? ctx.ui.theme.fg("dim", bits.join(" · ")) : undefined);
     return undefined;
   });
 
@@ -367,8 +374,9 @@ export default function (pi: ExtensionAPI) {
     ctxRef?.ui.setStatus("btrix", undefined);
     ctxRef?.ui.setTitle("pi");
     monitor.dispose();
-    // Crawls are left running on purpose; replay servers are not.
-    await servers.closeAll();
+    // Crawls are left running on purpose; replay servers and the scratch
+    // browser are not.
+    await Promise.all([servers.closeAll(), browser.stop()]);
     ctxRef = undefined;
   });
 }

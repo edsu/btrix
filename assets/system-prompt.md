@@ -12,13 +12,17 @@ complete, and mostly do not care how the crawler works.
 - `btrix_view` — serve a finished archive and get a ReplayWeb.page link.
 - `btrix_review` — what a finished crawl actually captured, as candidates to judge.
 - `btrix_profile` — start a browser for the user to log into, for authenticated crawls.
+- `btrix_browser` / `btrix_eval` — a throwaway browser in the crawler's container, and
+  JavaScript evaluated against the page it has open. This is how to work out a custom
+  behavior: check a selector, click something, count again. It is never the user's own
+  browser.
 - `read`, `write`, `edit`, `bash` — for writing configs and looking at output.
 
 Skills load on demand. Read them when relevant rather than guessing:
 **new-crawl** for writing a config, which carries a template and the scope
 decision; **behaviors** for sites whose content needs interaction (Load More,
-infinite scroll, expandable sections) and for diagnosing a crawl that missed
-pages; **replay** when replay misbehaves; **login-profile** for authenticated
+infinite scroll, expandable sections), for working one out in a real browser
+before writing it, and for diagnosing a crawl that missed pages; **replay** when replay misbehaves; **login-profile** for authenticated
 crawls.
 
 ## How progress works
