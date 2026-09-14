@@ -49,6 +49,13 @@ export interface PagesReport {
   statuses: Counted<number>[];
   /** Non-2xx pages, a sample. */
   notOk: PageRecord[];
+  /**
+   * How many pages matched, before sampling. The samples are capped at
+   * `SAMPLE`, so their length is not the count — and "8 non-2xx pages" when
+   * 500 of 520 were blocked misses exactly the judgement this report exists
+   * to support. Optional: reports read back from older sidecars lack them.
+   */
+  totals?: { offHost: number; notOk: number; partialLoads: number; thinPages: number };
   mimes: Counted<string>[];
   /** Titles shared by more than one page, most repeated first. */
   repeatedTitles: { title: string; count: number; sample: string[] }[];
@@ -61,7 +68,8 @@ export interface PagesReport {
   truncated: boolean;
 }
 
-const SAMPLE = 8;
+/** How many matching pages each sampled list keeps. */
+export const SAMPLE = 8;
 
 function tally<T>(values: T[]): Counted<T>[] {
   const counts = new Map<T, number>();
@@ -162,6 +170,10 @@ export function analyzePages(result: ReadPagesResult): PagesReport {
 
   const titles = tally(all.map((p) => p.title).filter((t): t is string => !!t && t.trim().length > 0));
 
+  const offHost = seedHost ? all.filter((p) => host(p.url) && host(p.url) !== seedHost) : [];
+  const notOk = all.filter((p) => typeof p.status === "number" && (p.status < 200 || p.status >= 300));
+  const partialLoads = all.filter((p) => typeof p.loadState === "number" && p.loadState < 4);
+
   return {
     seedPages: result.seed.length,
     extraPages: result.extra.length,
@@ -171,9 +183,9 @@ export function analyzePages(result: ReadPagesResult): PagesReport {
     maxTextLength: max,
     hosts,
     seedHost,
-    offHost: seedHost ? all.filter((p) => host(p.url) && host(p.url) !== seedHost).slice(0, SAMPLE) : [],
+    offHost: offHost.slice(0, SAMPLE),
     statuses: tally(all.map((p) => p.status).filter((s): s is number => typeof s === "number")),
-    notOk: all.filter((p) => typeof p.status === "number" && (p.status < 200 || p.status >= 300)).slice(0, SAMPLE),
+    notOk: notOk.slice(0, SAMPLE),
     mimes: tally(all.map((p) => p.mime).filter((m): m is string => !!m)),
     repeatedTitles: titles
       .filter((t) => t.count > 1)
@@ -186,7 +198,13 @@ export function analyzePages(result: ReadPagesResult): PagesReport {
     thinPages: thin.slice(0, SAMPLE),
     thinThreshold,
     emptyText: withText.filter((p) => p.textLength === 0).length,
-    partialLoads: all.filter((p) => typeof p.loadState === "number" && p.loadState < 4).slice(0, SAMPLE),
+    partialLoads: partialLoads.slice(0, SAMPLE),
+    totals: {
+      offHost: offHost.length,
+      notOk: notOk.length,
+      partialLoads: partialLoads.length,
+      thinPages: thin.length,
+    },
     truncated: thin.length > SAMPLE,
   };
 }

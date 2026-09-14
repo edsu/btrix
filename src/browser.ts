@@ -104,6 +104,11 @@ export class ScratchBrowser {
       last = info.error ?? last;
       await sleep(500);
     }
+    // Never answered, so there is no browser to report or reuse. Leaving
+    // `kind` set makes `isRunning()` lie, puts a browser in the status bar
+    // that is not there, and sends the next `open` down the "already have
+    // one, just navigate it" branch instead of starting a working browser.
+    await this.stop();
     return { ok: false, error: last };
   }
 
@@ -121,6 +126,9 @@ export class ScratchBrowser {
       if (info.ok) return { ok: true, url: info.url, title: info.title, kind: "container", vnc: this.vncUrl() };
       last = info.error ?? last;
     }
+    // Same as openLocal: a browser that never became ready must not be left
+    // on the books, and the container it may have half-started goes with it.
+    await this.stop();
     return { ok: false, error: last };
   }
 

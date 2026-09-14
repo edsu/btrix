@@ -8,6 +8,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { finishRun } from "../src/finish.ts";
+import { buildInventory } from "../src/inventory.ts";
 import type { CrawlStats } from "../src/stats.ts";
 import { ensureStore, prepareRun, resolveStore, type Store } from "../src/store.ts";
 
@@ -20,6 +21,7 @@ const stats = (over: Partial<CrawlStats> = {}): CrawlStats => ({
   state: "done",
   phase: "generating-wacz",
   containerRunning: false,
+  containerKnown: true,
   crawled: 12,
   total: 12,
   failed: 0,
@@ -105,6 +107,15 @@ describe("finishRun", () => {
     expect(b.kind).toBe("warc-only");
     expect(b.message).toContain("generateWACZ is off");
     expect(b.message).toContain("Set generateWACZ: true");
+
+    // Beside the directory, not inside it: written inside, nothing ever reads
+    // it, and the archive shows up with no provenance at all.
+    expect(b.sidecar).toBe(path.join(store.outDir, "nowacz.btrix.json"));
+    const inv = await buildInventory(store);
+    const archive = inv.archives.find((a) => a.collection === "nowacz");
+    expect(archive?.kind).toBe("warc-dir");
+    expect(archive?.provenance?.config).toBe("nowacz.yaml");
+    expect(archive?.provenance?.pages).toEqual({ crawled: 12, total: 12, failed: 0 });
   });
 
   it("parks a run that produced nothing, rather than discarding it", async () => {

@@ -9,7 +9,7 @@
 
 import type { Inventory } from "./inventory.ts";
 import { WORDMARK } from "./wordmark.ts";
-import type { PagesReport } from "./pages.ts";
+import { SAMPLE, type PagesReport } from "./pages.ts";
 import { nextStep } from "./inventory.ts";
 import { humanBytes, humanDuration } from "./sizes.ts";
 import type { CrawlStats } from "./stats.ts";
@@ -281,6 +281,26 @@ export function inventoryForModel(inv: Inventory): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * How many pages a sampled list stands for, and a note when the list printed
+ * below it is only part of that.
+ *
+ * The lists in a report are capped at `SAMPLE`, so their length is a floor:
+ * rendering it as the count turns "500 of 520 pages were blocked" into "8
+ * non-2xx pages", which is the opposite of the judgement the review is for.
+ * Reports read back from sidecars written before `totals` existed know only
+ * the sample, and a full sample then says "8+".
+ */
+function counted(
+  r: PagesReport,
+  key: keyof NonNullable<PagesReport["totals"]>,
+  sample: unknown[],
+): { count: string; note: string } {
+  const n = r.totals?.[key];
+  if (n === undefined) return { count: `${sample.length}${sample.length >= SAMPLE ? "+" : ""}`, note: "" };
+  return { count: `${n}`, note: n > sample.length ? ` (first ${sample.length} shown)` : "" };
+}
+
+/**
  * The review, written for the model to judge rather than to relay.
  *
  * Every line here is arithmetic over the crawler's own page index. The
@@ -313,8 +333,9 @@ export function reviewForModel(name: string, r: PagesReport): string {
     );
     if (r.emptyText) lines.push(`${r.emptyText} page(s) captured no text at all`);
     if (r.thinPages.length) {
+      const thin = counted(r, "thinPages", r.thinPages);
       lines.push(
-        `${r.thinPages.length}${r.truncated ? "+" : ""} page(s) under ${r.thinThreshold} chars — ` +
+        `${thin.count} page(s) under ${r.thinThreshold} chars${thin.note} — ` +
           `judge whether these are real content or a block page:\n` +
           r.thinPages.map((p) => `  ${p.textLength} chars · ${p.title ?? "(no title)"} · ${p.url}`).join("\n"),
       );
@@ -333,7 +354,10 @@ export function reviewForModel(name: string, r: PagesReport): string {
   const statuses = r.statuses.map((s) => `${s.value}×${s.count}`).join(" ");
   if (statuses) lines.push(`http statuses: ${statuses}`);
   if (r.notOk.length) {
-    lines.push(`non-2xx pages:\n` + r.notOk.map((p) => `  ${p.status} ${p.url}`).join("\n"));
+    const nok = counted(r, "notOk", r.notOk);
+    lines.push(
+      `${nok.count} non-2xx page(s)${nok.note}:\n` + r.notOk.map((p) => `  ${p.status} ${p.url}`).join("\n"),
+    );
   }
 
   if (r.hosts.length > 1) {
@@ -344,8 +368,9 @@ export function reviewForModel(name: string, r: PagesReport): string {
   }
 
   if (r.partialLoads.length) {
+    const partial = counted(r, "partialLoads", r.partialLoads);
     lines.push(
-      `${r.partialLoads.length} page(s) did not fully load (loadState below 4):\n` +
+      `${partial.count} page(s) did not fully load (loadState below 4)${partial.note}:\n` +
         r.partialLoads.map((p) => `  loadState ${p.loadState} ${p.url}`).join("\n"),
     );
   }
@@ -586,7 +611,7 @@ export function renderReview(name: string, r: PagesReport, theme: ThemeLike = pl
     if (r.emptyText) lines.push(theme.fg("warning", `  ${r.emptyText} page(s) captured no text at all`));
     if (r.thinPages.length) {
       lines.push(
-        theme.fg("warning", `  ${r.thinPages.length}${r.truncated ? "+" : ""} page(s) under ${r.thinThreshold} chars`) +
+        theme.fg("warning", `  ${counted(r, "thinPages", r.thinPages).count} page(s) under ${r.thinThreshold} chars`) +
           dim(" — content, or a block page?"),
       );
       for (const p of r.thinPages.slice(0, 5)) {
@@ -600,7 +625,7 @@ export function renderReview(name: string, r: PagesReport, theme: ThemeLike = pl
   }
 
   if (r.notOk.length) {
-    lines.push(theme.fg("error", `  ${r.notOk.length} non-2xx page(s)`));
+    lines.push(theme.fg("error", `  ${counted(r, "notOk", r.notOk).count} non-2xx page(s)`));
     for (const p of r.notOk.slice(0, 3)) lines.push(dim(`      ${p.status} ${p.url}`));
   }
   if (r.hosts.length > 1) {
@@ -610,7 +635,7 @@ export function renderReview(name: string, r: PagesReport, theme: ThemeLike = pl
     );
   }
   if (r.partialLoads.length) {
-    lines.push(dim(`  ${r.partialLoads.length} page(s) did not fully load`));
+    lines.push(dim(`  ${counted(r, "partialLoads", r.partialLoads).count} page(s) did not fully load`));
   }
   const other = r.mimes.filter((m) => m.value !== "text/html");
   if (other.length) lines.push(dim(`  non-html: ${other.map((m) => `${m.value}×${m.count}`).join(" ")}`));

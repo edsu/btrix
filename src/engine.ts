@@ -33,40 +33,79 @@ export async function engine(): Promise<string | undefined> {
 
 export interface RunningCrawl {
   id: string;
-  /** Collection name, recovered from `--config /crawls/config/<name>.yaml`. */
+  /** Config name, recovered from `--config /crawls/config/<name>.yaml`. */
   config?: string;
 }
 
 /**
- * Crawler containers currently running, with the config each one is crawling.
+ * Whether an image column names the crawler image, whatever tag it carries.
+ *
+ * `--filter ancestor=<name>` cannot answer this: an untagged ancestor matches
+ * only `:latest`, so every container started with `BTRIX_CRAWLER_VERSION`
+ * pinned — which all three scripts honour — looked like no container at all.
+ * Podman also reports fully-qualified names, hence the suffix match rather
+ * than equality.
+ */
+export function isCrawlerImage(image: string): boolean {
+  const repo = image
+    .trim()
+    .replace(/@sha256:[0-9a-f]+$/i, "")
+    .replace(/:[^:/]+$/, "");
+  return repo === IMAGE || repo.endsWith(`/${IMAGE}`);
+}
+
+/**
+ * Running containers built from the crawler image, with the command each was
+ * started with.
+ *
+ * `ok` is false when the engine could not be asked at all. Callers about to
+ * act irreversibly on "nothing is running" need to tell that apart from an
+ * engine that answered and listed nothing.
  *
  * `--no-trunc` matters: docker truncates the command column by default, which
  * would cut off the config path we parse the name out of.
  */
-export async function runningCrawls(): Promise<RunningCrawl[]> {
+async function crawlerContainers(): Promise<{ ok: boolean; rows: { id: string; command: string }[] }> {
   const bin = await engine();
-  if (!bin) return [];
+  // No engine is a definite answer, not a failed one: with nothing to run
+  // containers there are certainly none running.
+  if (!bin) return { ok: true, rows: [] };
   try {
-    const { stdout } = await exec(
-      bin,
-      ["ps", "--no-trunc", "--filter", `ancestor=${IMAGE}`, "--format", "{{.ID}}\t{{.Command}}"],
-      { timeout: 10_000 },
-    );
-    return stdout
+    const { stdout } = await exec(bin, ["ps", "--no-trunc", "--format", "{{.ID}}\t{{.Image}}\t{{.Command}}"], {
+      timeout: 10_000,
+    });
+    const rows = stdout
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean)
-      // create-login-profile shares the image but is not a crawl.
-      .filter((line) => !line.includes("create-login-profile"))
       .map((line) => {
-        const [id = "", command = ""] = line.split("\t");
-        const m = /config\/([^/\s"']+?)\.ya?ml/.exec(command);
-        return { id, config: m?.[1] };
+        const [id = "", image = "", command = ""] = line.split("\t");
+        return { id, image, command };
       })
-      .filter((c) => c.id);
+      .filter((r) => r.id && isCrawlerImage(r.image))
+      .map(({ id, command }) => ({ id, command }));
+    return { ok: true, rows };
   } catch {
-    return [];
+    return { ok: false, rows: [] };
   }
+}
+
+/**
+ * Crawler containers currently running, with the config each one is crawling,
+ * and whether the engine could be asked at all.
+ */
+export async function crawlLookup(): Promise<{ ok: boolean; crawls: RunningCrawl[] }> {
+  const { ok, rows } = await crawlerContainers();
+  const crawls = rows
+    // create-login-profile shares the image but is not a crawl.
+    .filter((r) => !r.command.includes("create-login-profile"))
+    .map((r) => ({ id: r.id, config: /config\/([^/\s"']+?)\.ya?ml/.exec(r.command)?.[1] }));
+  return { ok, crawls };
+}
+
+/** As `crawlLookup`, for callers that treat "could not ask" as "none". */
+export async function runningCrawls(): Promise<RunningCrawl[]> {
+  return (await crawlLookup()).crawls;
 }
 
 /**
@@ -75,31 +114,17 @@ export async function runningCrawls(): Promise<RunningCrawl[]> {
  * second one cannot be started over the top of it.
  */
 export async function runningProfileCaptures(): Promise<{ id: string; filename?: string }[]> {
-  const bin = await engine();
-  if (!bin) return [];
-  try {
-    const { stdout } = await exec(
-      bin,
-      ["ps", "--no-trunc", "--filter", `ancestor=${IMAGE}`, "--format", "{{.ID}}\t{{.Command}}"],
-      { timeout: 10_000 },
-    );
-    return stdout
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.includes("create-login-profile"))
-      .map((line) => {
-        const [id = "", command = ""] = line.split("\t");
-        const m = /profiles\/([^/\s"']+?)\.tar\.gz/.exec(command);
-        return { id, filename: m?.[1] };
-      })
-      .filter((c) => c.id);
-  } catch {
-    return [];
-  }
+  const { rows } = await crawlerContainers();
+  return rows
+    .filter((r) => r.command.includes("create-login-profile"))
+    .map((r) => ({ id: r.id, filename: /profiles\/([^/\s"']+?)\.tar\.gz/.exec(r.command)?.[1] }));
 }
 
-export async function isCrawlRunning(name: string): Promise<boolean> {
-  return (await runningCrawls()).some((c) => c.config === name);
+/** Tri-state: `undefined` when the engine could not be asked. */
+export async function isCrawlRunning(name: string): Promise<boolean | undefined> {
+  const { ok, crawls } = await crawlLookup();
+  if (!ok) return undefined;
+  return crawls.some((c) => c.config === name);
 }
 
 /**

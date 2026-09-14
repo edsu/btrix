@@ -65,7 +65,16 @@ export async function serveDir(dir: string, preferredPort = 8087, attempts = 10)
     }
 
     // Strip any query and refuse traversal: only files directly in dir.
-    const name = path.basename(decodeURIComponent((req.url ?? "/").split("?")[0]!));
+    // A malformed escape makes decodeURIComponent throw, and throwing here is
+    // an uncaught exception that takes the whole session down with it.
+    let name: string;
+    try {
+      name = path.basename(decodeURIComponent((req.url ?? "/").split("?")[0]!));
+    } catch {
+      res.writeHead(400, CORS);
+      res.end("bad request");
+      return;
+    }
     const file = path.join(dir, name);
     let size: number;
     try {

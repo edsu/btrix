@@ -16,6 +16,7 @@ const stats = (over: Partial<CrawlStats> = {}): CrawlStats => ({
   state: "crawling",
   phase: "crawling",
   containerRunning: true,
+  containerKnown: true,
   crawled: 142,
   total: 201,
   failed: 0,

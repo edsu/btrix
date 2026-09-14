@@ -54,6 +54,11 @@ describe("CrawlMonitor", () => {
     // Pretend we saw it alive, which is what a real crawl does before ending.
     (monitor as any).entries.get("inkdroid").sawLive = true;
 
+    // Settling is irreversible — it renames the collection directory — so it
+    // takes several agreeing observations, not one.
+    await monitor.tick();
+    expect(onComplete).not.toHaveBeenCalled();
+    await monitor.tick();
     await monitor.tick();
     expect(onComplete).toHaveBeenCalledOnce();
     expect(monitor.watched()).toEqual([]);
@@ -62,6 +67,35 @@ describe("CrawlMonitor", () => {
     await monitor.tick();
     // Nothing left to paint.
     expect(ticks.length).toBe(after);
+  });
+
+  it("does not settle on a tick where the engine could not be asked", async () => {
+    // `runningCrawls` reports an empty list both when nothing is running and
+    // when `docker ps` timed out. Settling on the latter renames the
+    // collection directory out from under a crawler still writing to it.
+    writeLog([{ context: "crawlStatus", message: "Crawl statistics", details: { crawled: 2, total: 4 } }]);
+    const onComplete = vi.fn();
+    monitor = new CrawlMonitor({ onComplete });
+
+    monitor.watch(target());
+    const entry = (monitor as any).entries.get("inkdroid");
+    entry.sawLive = true;
+    const real = await monitor.stats(target());
+    entry.tailer = {
+      read: async (): Promise<CrawlStats> => ({
+        ...real,
+        state: "stopped",
+        containerRunning: false,
+        containerKnown: false,
+      }),
+    };
+
+    await monitor.tick();
+    await monitor.tick();
+    await monitor.tick();
+    await monitor.tick();
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(monitor.watched()).toHaveLength(1);
   });
 
   it("reads without following, so a status check cannot resurrect a finished crawl", async () => {

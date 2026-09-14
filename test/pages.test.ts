@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import { analyzePages, parsePagesJsonl, type PageRecord } from "../src/pages.ts";
-import { reviewForModel } from "../src/render.ts";
+import { renderReview, reviewForModel } from "../src/render.ts";
 
 const HEADER = `{"format":"json-pages-1.0","id":"pages","title":"Seed Pages","hasText":"true"}`;
 
@@ -142,6 +142,25 @@ describe("analyzePages", () => {
     const r = report([page(), page({ url: "https://x.test/slow", loadState: 2 })]);
     expect(r.partialLoads).toHaveLength(1);
     expect(reviewForModel("c", r)).toContain("loadState 2");
+  });
+
+  it("counts every match, not just the sample it keeps", () => {
+    // The samples are capped, so reporting their length turns "20 of 21 pages
+    // were blocked" into "8 non-2xx pages" — the opposite of the judgement a
+    // review exists to support.
+    const blocked = Array.from({ length: 20 }, (_, i) =>
+      page({ url: `https://x.test/${i}`, status: 403, loadState: 2 }),
+    );
+    const r = report([page(), ...blocked]);
+
+    expect(r.notOk).toHaveLength(8);
+    expect(r.totals?.notOk).toBe(20);
+    expect(r.totals?.partialLoads).toBe(20);
+
+    const forModel = reviewForModel("c", r);
+    expect(forModel).toContain("20 non-2xx page(s) (first 8 shown)");
+    expect(forModel).toContain("20 page(s) did not fully load");
+    expect(renderReview("c", r).join("\n")).toContain("20 non-2xx page(s)");
   });
 
   it("survives a collection with no page index", () => {

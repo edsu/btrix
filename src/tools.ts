@@ -53,6 +53,12 @@ const STARTUP_TIMEOUT_MS = 180_000;
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: {} });
 
+/** How a child ended. A signal kill carries a null code, which on its own
+ *  renders as the unhelpful "exited with code null". */
+function exitDescription(e: { code: number | null; signal: NodeJS.Signals | null }): string {
+  return e.code === null ? `was killed by ${e.signal ?? "a signal"}` : `exited with code ${e.code}`;
+}
+
 /**
  * Accept "sulnews", "sulnews.yaml" or "sulnews.yml" alike, and tolerate a
  * leading "@" in case the completion trigger comes along for the ride.
@@ -211,9 +217,9 @@ export function createTools(
       fs.closeSync(out);
       monitor.watch(target);
 
-      let exited: number | null | undefined;
-      child.on("exit", (code) => {
-        exited = code;
+      let exited: { code: number | null; signal: NodeJS.Signals | null } | undefined;
+      child.on("exit", (code, signal) => {
+        exited = { code, signal };
       });
 
       // Wait out the image pull and the first statistics line. This window is
@@ -247,9 +253,9 @@ export function createTools(
           announcedContainer = true;
           onUpdate?.({ content: [{ type: "text", text: "container up, waiting for first statistics…" }], details: {} });
         }
-        if (exited !== undefined && exited !== 0 && !stats.containerRunning) {
+        if (exited && exited.code !== 0 && !stats.containerRunning) {
           const tail = fs.readFileSync(logPath, "utf8").trim().split("\n").slice(-12).join("\n");
-          return text(`The runner exited with code ${exited} before crawling started:\n\n${tail}`);
+          return text(`The runner ${exitDescription(exited)} before crawling started:\n\n${tail}`);
         }
         await sleep(1_500);
       }
@@ -608,9 +614,9 @@ export function createTools(
       child.unref();
       fs.closeSync(out);
 
-      let exited: number | null | undefined;
-      child.on("exit", (code) => {
-        exited = code;
+      let exited: { code: number | null; signal: NodeJS.Signals | null } | undefined;
+      child.on("exit", (code, signal) => {
+        exited = { code, signal };
       });
 
       onUpdate?.({ content: [{ type: "text", text: "pulling image and starting the browser…" }], details: {} });
@@ -629,9 +635,9 @@ export function createTools(
           up = true;
           break;
         }
-        if (exited !== undefined && exited !== 0) {
+        if (exited && exited.code !== 0) {
           const tail = fs.readFileSync(logPath, "utf8").trim().split("\n").slice(-12).join("\n");
-          return text(`The profile browser exited with code ${exited}:\n\n${tail}`);
+          return text(`The profile browser ${exitDescription(exited)}:\n\n${tail}`);
         }
         await sleep(1_500);
       }
@@ -751,17 +757,17 @@ export function createTools(
         };
       }
 
-      const { removed, refused } = await applyClean(store, plan);
+      const { removed, refused, bytes } = await applyClean(store, plan);
       return {
         content: [
           {
             type: "text",
             text:
-              `Removed ${removed.length} directory(ies), reclaiming about ${humanBytes(plan.totalBytes)}.` +
+              `Removed ${removed.length} directory(ies), reclaiming about ${humanBytes(bytes)}.` +
               (refused.length ? ` ${refused.length} could not be removed: ${refused.join(", ")}` : ""),
           },
         ],
-        details: { removed, refused },
+        details: { removed, refused, bytes },
       };
     },
   });

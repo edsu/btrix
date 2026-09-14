@@ -98,6 +98,17 @@ describe("serveDir", () => {
     expect(res.status).toBe(404);
   });
 
+  it("answers 400 for a malformed escape instead of taking the process down", async () => {
+    // decodeURIComponent throws synchronously in the request handler, and an
+    // uncaught throw there ends the whole session — replay servers, widgets
+    // and all.
+    const res = await fetch(`http://127.0.0.1:${server.port}/%`);
+    expect(res.status).toBe(400);
+
+    // Still serving, which is the point.
+    expect((await get("example.wacz")).status).toBe(200);
+  });
+
   it("builds a replayweb.page url", () => {
     expect(server.url("example.wacz")).toBe(
       `https://replayweb.page/?source=http://localhost:${server.port}/example.wacz`,

@@ -31,10 +31,23 @@ interface Entry {
   /** Whether we have observed this crawl alive. Guards against announcing
    *  "finished" for something that was already done when we started up. */
   sawLive: boolean;
+  /** Consecutive ticks that positively observed no container. */
+  absent: number;
   settled: boolean;
 }
 
 const TERMINAL = new Set<CrawlStats["state"]>(["done", "stopped"]);
+
+/**
+ * How many consecutive ticks must agree the container has gone before a crawl
+ * is treated as finished.
+ *
+ * Settling is irreversible: `onComplete` renames the collection directory out
+ * of the run directory. One `docker ps` that timed out under load, during
+ * `post-crawl` and before the WACZ exists, would otherwise move the files out
+ * from under a crawler that is still writing them.
+ */
+const ABSENT_TICKS = 3;
 
 export class CrawlMonitor {
   private readonly intervalMs: number;
@@ -58,11 +71,13 @@ export class CrawlMonitor {
     const existing = this.entries.get(target.config);
     if (existing && existing.target.root === target.root) {
       existing.settled = false;
+      existing.absent = 0;
     } else {
       this.entries.set(target.config, {
         target,
         tailer: new CrawlTailer(target.collection, target.root, target.config),
         sawLive: false,
+        absent: 0,
         settled: false,
       });
     }
@@ -132,7 +147,13 @@ export class CrawlMonitor {
         }
         if (!TERMINAL.has(stats.state) || stats.containerRunning) e.sawLive = true;
         this.opts.onTick?.(stats, e.target);
-        if (e.sawLive && TERMINAL.has(stats.state) && !stats.containerRunning) {
+
+        // Only an observation we actually made counts towards settling. A tick
+        // where the engine could not be asked says nothing about the crawl.
+        if (stats.containerRunning || !stats.containerKnown) e.absent = 0;
+        else e.absent += 1;
+
+        if (e.sawLive && TERMINAL.has(stats.state) && e.absent >= ABSENT_TICKS) {
           e.settled = true;
           await this.opts.onComplete?.(stats, e.target);
           // Stop polling it. A finished crawl left in the loop keeps getting

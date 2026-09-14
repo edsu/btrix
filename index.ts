@@ -17,7 +17,7 @@ import { finishRun, type Outcome } from "./src/finish.ts";
 import { ScratchBrowser, VNC_PORT } from "./src/browser.ts";
 import { CrawlMonitor, type WatchTarget } from "./src/monitor.ts";
 import { notifyDesktop } from "./src/notify.ts";
-import { renderForModel, renderInventory, renderWidget, startupLines, supportsUnicode } from "./src/render.ts";
+import { isLive, renderForModel, renderInventory, renderWidget, startupLines, supportsUnicode } from "./src/render.ts";
 import { listArchiveFiles, ReplayServers } from "./src/serve.ts";
 import { linesComponent } from "./src/tui.ts";
 import { humanBytes } from "./src/sizes.ts";
@@ -31,7 +31,7 @@ import { engineStatus } from "./src/engine.ts";
 import { firstRunPanel, modelLabel, probeAuth, readyHeader } from "./src/firstrun.ts";
 import { buildInventory } from "./src/inventory.ts";
 import { listProfiles } from "./src/profile.ts";
-import { configPath, createTools, listConfigs } from "./src/tools.ts";
+import { configPath, createTools, listConfigs, normalizeName } from "./src/tools.ts";
 
 /** Free space below which starting a crawl is worth a confirmation. */
 const LOW_DISK_BYTES = 5 * 1024 ** 3;
@@ -247,8 +247,20 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify(`No crawl found for ${name}.`, "warning");
           return;
         }
-        monitor.watch(target);
-        await monitor.tick();
+        // Watching something already finished puts it back on screen as
+        // though it were live, and `sawLive` never becomes true for a crawl
+        // that was terminal when we found it — so the entry never settles,
+        // the widget keeps showing it, and the 1 Hz loop spawns a `docker ps`
+        // a second for the rest of the session. Show the readout instead.
+        const stats = await monitor.stats(target);
+        if (isLive(stats)) {
+          monitor.watch(target);
+          await monitor.tick();
+        } else if (ctx.hasUI) {
+          ctx.ui.setWidget(widgetKey(target.config), () =>
+            linesComponent(renderWidget(stats, ctx.ui.theme), { overflow: "clip" }),
+          );
+        }
         return;
       }
 
@@ -362,7 +374,10 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
     if (event.toolName !== "btrix_run") return undefined;
 
-    const name = String((event.input as { config?: unknown }).config ?? "").replace(/\.ya?ml$/, "");
+    // The same normalisation the tool applies, or a name the tool accepts but
+    // this handler does not — "@sulnews", " sulnews" — resolves to no config
+    // here, returns early, and runs the crawl with no scope confirmation.
+    const name = normalizeName(String((event.input as { config?: unknown }).config ?? ""));
     const file = configPath(store, name);
     if (!file) return undefined; // The tool reports a missing config better than we can.
 

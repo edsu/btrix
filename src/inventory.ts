@@ -68,6 +68,19 @@ const readdir = (dir: string): string[] => {
   }
 };
 
+/**
+ * Unguarded, this throws out of `buildInventory` for an entry that vanished
+ * between the readdir and the stat — taking down session start, the `@`
+ * completion provider, and every tool that lists archives.
+ */
+function isDirectory(p: string): boolean {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 async function readArchives(store: Store): Promise<Archive[]> {
   const out: Archive[] = [];
   for (const entry of readdir(store.outDir).sort()) {
@@ -98,7 +111,7 @@ async function readArchives(store: Store): Promise<Archive[]> {
         bytes: fileSize(full),
         provenance,
       });
-    } else if (fs.statSync(full).isDirectory()) {
+    } else if (isDirectory(full)) {
       out.push({
         collection: entry,
         path: full,

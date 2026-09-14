@@ -40,6 +40,9 @@ export interface CrawlStats {
   state: CrawlState;
   phase: CrawlPhase;
   containerRunning: boolean;
+  /** Whether the engine could be asked. False means `containerRunning: false`
+   *  is an absence of evidence, not evidence of absence. */
+  containerKnown: boolean;
 
   crawled: number;
   total: number;
@@ -214,7 +217,12 @@ export class CrawlTailer {
         : undefined;
 
     const waczPath = this.waczPath();
-    const containerRunning = await isCrawlRunning(this.name);
+    // By config name, not collection name: `runningCrawls` recovers the config
+    // filename from the container's `--config` argument, and a config whose
+    // `collection:` differs from its filename is a case the rest of the code
+    // goes out of its way to support.
+    const running = await isCrawlRunning(this.config ?? this.name);
+    const containerRunning = running === true;
 
     return {
       name: this.name,
@@ -222,6 +230,7 @@ export class CrawlTailer {
       state: deriveState({ facts: f, wacz: !!waczPath, containerRunning }),
       phase: f.phase,
       containerRunning,
+      containerKnown: running !== undefined,
       crawled: f.crawled,
       total: f.total,
       failed: f.failed,

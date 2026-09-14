@@ -100,10 +100,17 @@ export async function planClean(
  * own runs/ and failed/ before removal, so a bug elsewhere cannot turn this
  * into a delete of something that matters.
  */
-export async function applyClean(store: Store, plan: CleanPlan): Promise<{ removed: string[]; refused: string[] }> {
+export async function applyClean(
+  store: Store,
+  plan: CleanPlan,
+): Promise<{ removed: string[]; refused: string[]; bytes: number }> {
   const roots = [path.resolve(store.runsDir), path.resolve(store.failedDir)];
   const removed: string[] = [];
   const refused: string[] = [];
+  // Counted as we go, not taken from the plan: reporting the plan's total
+  // after refusing the single largest directory claims back bytes still on
+  // the disk.
+  let bytes = 0;
 
   for (const c of plan.candidates) {
     const target = path.resolve(c.path);
@@ -115,9 +122,10 @@ export async function applyClean(store: Store, plan: CleanPlan): Promise<{ remov
     try {
       await fs.promises.rm(target, { recursive: true, force: true });
       removed.push(c.path);
+      bytes += c.bytes ?? 0;
     } catch {
       refused.push(c.path);
     }
   }
-  return { removed, refused };
+  return { removed, refused, bytes };
 }

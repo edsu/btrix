@@ -175,7 +175,10 @@ export async function finishRun(store: Store, o: FinishOptions, stats: CrawlStat
     fs.mkdirSync(store.outDir, { recursive: true });
     const dest = freeName(store.outDir, o.collection, "", runName);
     await fs.promises.rename(collectionDir, dest);
-    const sidecar = writeSidecar(path.join(dest, o.collection), store, o, stats, review);
+    // Beside the directory, not inside it: `readArchives` and `btrix_review`
+    // both look for `<out>/<entry>.btrix.json`, and `freeName` may have given
+    // the directory a `-<stamp>` suffix the collection name does not carry.
+    const sidecar = writeSidecar(dest, store, o, stats, review);
     writeOutcomeMarker(o.root, { kind: "warc-only", dest, sidecar, at: new Date().toISOString() });
     const wanted = readConfig(path.join(o.root, "config", `${o.config}.yaml`), o.config).generateWacz;
     return {
