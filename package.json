@@ -1,7 +1,7 @@
 {
   "name": "btrix",
   "version": "0.1.0",
-  "description": "Make high-fidelity web archives with Browsertrix Crawler, by describing what you want archived",
+  "description": "A chatbot for Browsertrix Crawler",
   "license": "MIT",
   "author": "Ed Summers",
   "type": "module",
