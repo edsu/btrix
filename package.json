@@ -1,5 +1,5 @@
 {
-  "name": "btrix",
+  "name": "@edsu/btrix",
   "version": "0.1.0",
   "description": "A chatbot for Browsertrix Crawler",
   "license": "MIT",
@@ -63,5 +63,8 @@
     "type": "git",
     "url": "git+https://github.com/edsu/btrix.git"
   },
-  "homepage": "https://edsu.github.io/btrix/"
+  "homepage": "https://edsu.github.io/btrix/",
+  "publishConfig": {
+    "access": "public"
+  }
 }

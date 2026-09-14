@@ -18,7 +18,7 @@ keeps its engine anyway, and the Linux paths it gives you are what the crawler
 container expects.
 
 ```bash
-npm install -g btrix
+npm install -g @edsu/btrix
 btrix
 ```
 

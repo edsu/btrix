@@ -351,7 +351,7 @@ a:hover{text-decoration-thickness:2px}
     <a class="mark" href="./">btrix</a>
     <nav class="masthead-nav" aria-label="Elsewhere">
       <a href="https://github.com/edsu/btrix">Source</a>
-      <a href="https://www.npmjs.com/package/btrix">npm</a>
+      <a href="https://www.npmjs.com/package/@edsu/btrix">npm</a>
       <a class="nav-extra" href="https://webrecorder.net">Webrecorder</a>
     </nav>
   </div>
@@ -371,7 +371,7 @@ a:hover{text-decoration-thickness:2px}
 
         <div class="install">
           <div class="install-row">
-            <code class="install-cmd" id="cmd"><span>$</span>npm install -g btrix</code>
+            <code class="install-cmd" id="cmd"><span>$</span>npm install -g @edsu/btrix</code>
             <button class="install-copy" id="copy" type="button" data-label="Copy">Copy</button>
           </div>
           <p class="install-req">macOS or Linux · Docker or Podman · Node 22.19+<br>Crawling needs no account. Bring your own model, or run one locally.</p>
@@ -522,7 +522,7 @@ a:hover{text-decoration-thickness:2px}
       <p><a href="https://github.com/webrecorder/browsertrix-crawler">Browsertrix Crawler</a> and the WACZ format are the work of <a href="https://webrecorder.net">Webrecorder</a>. btrix is only a front end — if it is useful to you, <a href="https://opencollective.com/webrecorder">support them</a>.</p>
       <ul class="colophon-meta">
         <li><a href="https://github.com/edsu/btrix">GitHub</a></li>
-        <li><a href="https://www.npmjs.com/package/btrix">npm</a></li>
+        <li><a href="https://www.npmjs.com/package/@edsu/btrix">npm</a></li>
         <li><a href="https://replayweb.page">ReplayWeb.page</a></li>
         <li>MIT</li>
         <li>Ed Summers</li>
@@ -623,7 +623,7 @@ a:hover{text-decoration-thickness:2px}
 
   var copy = document.getElementById('copy');
   copy.addEventListener('click', function () {
-    navigator.clipboard.writeText('npm install -g btrix').then(function () {
+    navigator.clipboard.writeText('npm install -g @edsu/btrix').then(function () {
       copy.textContent = 'Copied';
       setTimeout(function () { copy.textContent = copy.dataset.label; }, 1600);
     });
