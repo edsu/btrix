@@ -10,7 +10,10 @@ a container and produce WACZ files you can replay in
 
 ## Install
 
-Requires [Docker or Podman](https://docs.docker.com/get-docker/) and Node 22.19+.
+macOS or Linux, [Docker or Podman](https://docs.docker.com/get-docker/), and
+Node 22.19+. On Windows, run btrix inside WSL2 — that is where Docker Desktop
+keeps its engine anyway, and the Linux paths it gives you are what the crawler
+container expects.
 
 ```bash
 npm install -g btrix
