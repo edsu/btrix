@@ -22,7 +22,9 @@ btrix
 
 On first run btrix asks you to connect a language model: type `/login` for a
 Claude, ChatGPT or Copilot subscription, or set an API key such as
-`ANTHROPIC_API_KEY`. Crawling itself needs no account.
+`ANTHROPIC_API_KEY`. Crawling itself needs no account, and a model running on
+your own machine works too — see [Using a local
+model](#using-a-local-model).
 
 Your model credential and btrix's own preferences live in `~/.btrix`, kept
 apart from anything else on the machine. Point `BTRIX_AGENT_DIR` somewhere else
@@ -123,6 +125,52 @@ over noVNC at `localhost:6080`; you sign in there, and the resulting profile is
 saved into the store. Profiles hold session cookies, so they are kept private,
 ignored by git, and mounted read-only into a crawl. Sessions expire — if a
 logged-in crawl comes back full of login pages, make the profile again.
+
+## Using a local model
+
+btrix talks to whatever model the harness can reach, so a local server that
+speaks the OpenAI API works: LM Studio, Ollama, vLLM, llama.cpp. Declare it in
+`~/.btrix/models.json`. That is btrix's own agent directory, so this does not
+touch the configuration of anyone who also uses pi directly.
+
+```json
+{
+  "providers": {
+    "lmstudio": {
+      "baseUrl": "http://localhost:1234/v1",
+      "api": "openai-completions",
+      "apiKey": "lmstudio",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false
+      },
+      "models": [
+        { "id": "qwen/qwen3.8-27b", "contextWindow": 32768 }
+      ]
+    }
+  }
+}
+```
+
+Then `btrix --provider lmstudio --model qwen/qwen3.8-27b`, or pick it in
+`/model` and press Ctrl+S to make it the default. That is the whole setup: no
+`/login`, and no credential file. The `apiKey` is a placeholder — LM Studio
+ignores it, but a provider with no auth at all is not offered as a model, so
+something has to be there.
+
+Four things that are easy to get wrong:
+
+- `curl -s localhost:1234/v1/models` gives the exact model ids. There is no
+  discovery: a model loaded in LM Studio has to be listed here too.
+- Set `contextWindow` to whatever you loaded the model at. Left out, it
+  defaults to 128K, and a server loaded at 8K will simply refuse.
+- `compat` is off for both fields above because most local servers do not
+  understand the `developer` role or `reasoning_effort`. Add
+  `"reasoning": true` to a model entry if the server reports thinking
+  separately.
+- btrix is entirely tool-driven — ten crawl tools plus `read`, `write`, `edit`
+  and `bash` — so pick a model with real tool-calling support. Small models
+  tend to manage single calls and then lose track across a longer job.
 
 ## Writing a custom behavior
 
