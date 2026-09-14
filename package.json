@@ -62,5 +62,6 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/edsu/btrix.git"
-  }
+  },
+  "homepage": "https://edsu.github.io/btrix/"
 }
