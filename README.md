@@ -8,6 +8,8 @@ a container and produce WACZ files you can replay in
 
 ![btrix in use: describing a site to archive, watching the crawl, and replaying the result](docs/demo.gif)
 
+There is also a [project page](https://edsu.github.io/btrix/).
+
 ## Install
 
 macOS or Linux, [Docker or Podman](https://docs.docker.com/get-docker/), and

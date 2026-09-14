@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>btrix — high-fidelity web archives, by conversation</title>
+<meta name="description" content="Describe the site you want archived. btrix writes the crawl config, runs Browsertrix Crawler in a container on your machine, and hands you a WACZ you can replay.">
+
+<meta property="og:title" content="btrix">
+<meta property="og:description" content="Say what you want archived. btrix writes the config, runs Browsertrix Crawler on your machine, and hands you a WACZ.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://edsu.github.io/btrix/">
+<meta property="og:image" content="https://edsu.github.io/btrix/demo.gif">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%234A3BB0'/%3E%3Crect x='6' y='13' width='20' height='3' fill='%23E4E7E2'/%3E%3Crect x='6' y='19' width='12' height='3' fill='%23E4E7E2'/%3E%3C/svg%3E">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100,400;100,500;100,600;125,700;125,800&family=Martian+Mono:wdth,wght@87.5,400;87.5,600;100,400;100,500&display=swap">
+
+<style>
+:root{
+  --ground:#e1e6df;
+  --band:#f2f4ef;
+  --ink:#131a16;
+  --muted:#5f6a63;
+  --rule:#c2cabf;
+  --stamp:#4a3bb0;
+  --stamp-wash:rgba(74,59,176,.13);
+  --ok:#2c6a4a;
+
+  /* inverted, for the recording band */
+  --dark:#111916;
+  --dark-band:#0b110f;
+  --dark-rule:#2b3630;
+  --dark-ink:#dfe6df;
+  --dark-muted:#8a968d;
+  --stamp-lift:#a294ff;
+
+  --sans:'Archivo','Helvetica Neue',Arial,sans-serif;
+  --mono:'Martian Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --term:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+
+  --gutter:clamp(20px,4vw,40px);
+  --measure:1120px;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+
+html{-webkit-text-size-adjust:100%}
+
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-stretch:100%;
+  font-size:clamp(15px,.55vw + 13.6px,17px);
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+
+a{color:var(--stamp);text-decoration-thickness:1px;text-underline-offset:3px}
+a:hover{text-decoration-thickness:2px}
+
+:focus-visible{outline:2px solid var(--stamp);outline-offset:3px;border-radius:2px}
+
+.wrap{max-width:var(--measure);margin-inline:auto;padding-inline:var(--gutter)}
+
+.skip{position:absolute;left:-9999px}
+.skip:focus{left:var(--gutter);top:12px;z-index:9;background:var(--band);padding:8px 14px;border:1px solid var(--stamp)}
+
+/* ---- shared type roles ---- */
+
+.eyebrow{
+  font-family:var(--mono);
+  font-stretch:87.5%;
+  font-weight:600;
+  font-size:.66rem;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin:0 0 1.1rem;
+}
+
+.display{
+  font-stretch:125%;
+  font-weight:800;
+  font-size:clamp(2.6rem,8vw,5.5rem);
+  line-height:.92;
+  letter-spacing:-.042em;
+  margin:0;
+  text-wrap:balance;
+}
+
+.h2{
+  font-stretch:125%;
+  font-weight:700;
+  font-size:clamp(1.7rem,3.4vw,2.5rem);
+  line-height:1.02;
+  letter-spacing:-.025em;
+  margin:0 0 .6rem;
+  text-wrap:balance;
+}
+
+.lede{
+  font-size:clamp(1.02rem,.5vw + .9rem,1.22rem);
+  line-height:1.5;
+  color:var(--ink);
+  margin:1.5rem 0 0;
+  max-width:36ch;
+}
+
+.note{color:var(--muted);max-width:60ch}
+
+
+/* ---- masthead ---- */
+
+.masthead{
+  border-bottom:1px solid var(--rule);
+  position:sticky;top:0;z-index:5;
+  background:color-mix(in srgb,var(--ground) 88%,transparent);
+  backdrop-filter:blur(8px);
+}
+.masthead-in{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:1rem;height:56px;
+}
+.mark{
+  font-family:var(--mono);font-stretch:100%;font-weight:500;
+  font-size:.95rem;letter-spacing:-.01em;color:var(--ink);text-decoration:none;
+}
+.mark::before{
+  content:"";display:inline-block;width:9px;height:9px;
+  background:var(--stamp);margin-right:.55em;vertical-align:baseline;
+}
+.masthead-nav{display:flex;gap:1.35rem;align-items:center}
+.masthead-nav a{
+  font-family:var(--mono);font-stretch:87.5%;font-size:.7rem;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+  text-decoration:none;
+}
+.masthead-nav a:hover{color:var(--stamp)}
+@media (max-width:520px){.nav-extra{display:none}}
+
+/* ---- bands ---- */
+
+.band{padding-block:clamp(3.75rem,8vw,7rem);border-top:1px solid var(--rule)}
+.band-hero{padding-block:clamp(3rem,6vw,5.25rem) clamp(3.5rem,7vw,6rem);border-top:0}
+.band-light{background:var(--band)}
+
+/* The recording is terminal footage — give it its own dark room. */
+.band-dark{background:var(--dark);color:var(--dark-ink);border-top-color:var(--dark)}
+.band-dark .eyebrow{color:var(--stamp-lift)}
+.band-dark .h2{color:#f1f5f0}
+/* The recording already carries its own window chrome — don't frame it twice. */
+.band-dark .frame{background:transparent;border:0}
+.band-dark .frame-bar{padding-inline:0;border-bottom-color:var(--dark-rule);color:var(--dark-muted)}
+.band-dark .frame-bar b{color:var(--dark-ink)}
+.band-dark .frame-cap{color:var(--dark-muted)}
+
+.band-head{max-width:46ch;margin-bottom:clamp(2rem,4vw,3rem)}
+
+/* ---- hero ---- */
+
+.hero-head{margin-bottom:clamp(2.5rem,5vw,3.75rem)}
+
+.hero{
+  display:grid;gap:clamp(2.5rem,5vw,4rem);align-items:start;
+  padding-top:clamp(2.25rem,4vw,3rem);border-top:1px solid var(--rule);
+}
+@media (min-width:920px){.hero{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+
+.hero .lede{margin-top:0;max-width:42ch}
+
+.install{margin-top:0;max-width:30rem}
+.install-row{
+  display:flex;align-items:stretch;
+  border:1px solid var(--ink);background:var(--band);
+}
+.install-cmd{
+  flex:1;display:flex;align-items:center;gap:.6em;min-width:0;
+  padding:.85rem 1rem;
+  font-family:var(--mono);font-stretch:87.5%;font-size:.8rem;
+  overflow-x:auto;white-space:nowrap;
+}
+.install-cmd span{color:var(--muted)}
+.install-copy{
+  flex:none;border:0;border-left:1px solid var(--ink);
+  background:var(--ink);color:var(--band);cursor:pointer;
+  padding:0 1.1rem;
+  font-family:var(--mono);font-stretch:87.5%;font-weight:600;
+  font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;
+}
+.install-copy:hover{background:var(--stamp)}
+.install-req{
+  margin:.85rem 0 0;
+  font-family:var(--mono);font-stretch:87.5%;font-size:.7rem;
+  color:var(--muted);line-height:1.8;
+}
+
+/* ---- the screen: signature element ----
+   The real btrix screen, character for character. Every value it shows is
+   one the program actually renders — see src/render.ts. */
+
+.screen{margin:clamp(2.75rem,5vw,4.25rem) 0 0}
+
+.screen-out{
+  margin:0;padding:clamp(1.1rem,2vw,1.75rem) clamp(1rem,2vw,1.6rem);
+  border:1px solid var(--ink);background:var(--band);
+  box-shadow:16px 16px 0 var(--stamp-wash);
+  font-family:var(--term);
+  font-size:clamp(9.5px,1.18vw,16px);
+  line-height:1.6;
+  white-space:pre;overflow-x:auto;
+  color:var(--ink);
+}
+.screen-out a{color:inherit;text-decoration-color:var(--rule)}
+.screen-out a:hover{color:var(--stamp);text-decoration-color:var(--stamp)}
+
+.s-mark{color:var(--stamp)}
+.s-dim{color:var(--muted)}
+.s-rule{color:var(--rule)}
+.s-run{color:var(--stamp)}
+.s-ok{color:var(--ok)}
+
+.screen-cap{
+  display:flex;flex-wrap:wrap;gap:.5rem 1.5rem;
+  align-items:baseline;justify-content:space-between;
+  margin-top:.9rem;
+}
+.screen-note{
+  font-family:var(--mono);font-stretch:87.5%;font-size:.66rem;
+  letter-spacing:.06em;color:var(--muted);
+}
+.screen-again{
+  border:0;background:none;padding:0;cursor:pointer;
+  font-family:var(--mono);font-stretch:87.5%;font-size:.66rem;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+  visibility:hidden;
+}
+.screen[data-state="done"] .screen-again{visibility:visible}
+.screen-again:hover{color:var(--stamp)}
+
+/* ---- the exchange ---- */
+
+.exchange{border-top:1px solid var(--ink)}
+.exchange-head{display:none}
+@media (min-width:760px){
+  .exchange-head{
+    display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);
+    gap:2.5rem;padding:.7rem 0;border-bottom:1px solid var(--rule);
+  }
+}
+.exchange-head span{
+  font-family:var(--mono);font-stretch:87.5%;font-weight:600;
+  font-size:.6rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);
+}
+.exchange-row{
+  display:grid;gap:.3rem 2.5rem;
+  padding:.8rem 0;border-bottom:1px solid var(--rule);
+}
+@media (min-width:760px){
+  .exchange-row{grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:2.5rem;align-items:baseline}
+}
+.exchange-say{
+  margin:0;
+  font-size:1.02rem;font-weight:500;line-height:1.4;
+  letter-spacing:-.01em;text-wrap:pretty;
+}
+.exchange-do{margin:0;color:var(--muted);line-height:1.5;text-wrap:pretty}
+.exchange-do code{
+  font-family:var(--mono);font-stretch:87.5%;font-size:.78em;color:var(--ink);
+}
+
+/* ---- recorded ---- */
+
+.frame{border:1px solid var(--ink);background:var(--band);max-width:1000px}
+.frame-bar{
+  display:flex;flex-wrap:wrap;gap:.3rem .9rem;align-items:baseline;
+  padding:.55rem .9rem;border-bottom:1px solid var(--rule);
+  font-family:var(--mono);font-stretch:87.5%;
+  font-size:.62rem;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);
+}
+.frame-bar b{color:var(--ink);font-weight:600}
+.frame img{display:block;width:100%;height:auto}
+.frame-cap{
+  margin:.9rem 0 0;font-size:.85rem;color:var(--muted);max-width:52ch;
+}
+
+/* ---- on disk ---- */
+
+.disk{display:grid;gap:clamp(2.25rem,4vw,3.5rem);align-items:start}
+@media (min-width:920px){
+  .disk{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .tree{position:sticky;top:5.5rem}
+}
+
+.tree{
+  margin:0;padding:1.25rem 1rem;overflow-x:auto;
+  border:1px solid var(--ink);background:var(--ground);
+  font-family:var(--term);font-size:clamp(10px,.92vw,12.5px);line-height:1.85;
+}
+.tree b{color:var(--stamp);font-weight:400}
+.tree i{font-style:normal;color:var(--muted)}
+
+.facts{display:grid;gap:1.6rem;margin:0}
+.fact dt{
+  font-family:var(--mono);font-stretch:87.5%;font-weight:600;
+  font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--stamp);margin-bottom:.4rem;
+}
+.fact dd{margin:0;color:var(--muted);line-height:1.55;text-wrap:pretty}
+.fact dd code{
+  font-family:var(--mono);font-stretch:87.5%;font-size:.8em;color:var(--ink);
+}
+
+/* ---- colophon ---- */
+
+.colophon{padding-block:clamp(3.25rem,6vw,5rem);border-top:1px solid var(--ink)}
+.colophon-in{display:grid;gap:2.5rem}
+@media (min-width:880px){.colophon-in{grid-template-columns:minmax(0,auto) minmax(32ch,1fr);gap:4rem;align-items:start}}
+
+.colophon-mark{
+  margin:0;display:grid;gap:.15rem;
+  font-family:var(--mono);font-stretch:87.5%;font-size:.72rem;
+  font-weight:500;color:var(--ink);
+}
+.colophon-mark span{color:var(--muted);font-weight:400}
+
+.colophon-text{max-width:46ch}
+.colophon-text p{margin:0 0 1rem}
+.colophon-meta{
+  display:flex;flex-wrap:wrap;gap:.4rem 1.25rem;margin:1.5rem 0 0;padding:0;list-style:none;
+  font-family:var(--mono);font-stretch:87.5%;font-size:.64rem;
+  letter-spacing:.11em;text-transform:uppercase;color:var(--muted);
+}
+.colophon-meta a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--rule)}
+.colophon-meta a:hover{color:var(--stamp);border-bottom-color:var(--stamp)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+</style>
+</head>
+
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="masthead">
+  <div class="wrap masthead-in">
+    <a class="mark" href="./">btrix</a>
+    <nav class="masthead-nav" aria-label="Elsewhere">
+      <a href="https://github.com/edsu/btrix">Source</a>
+      <a href="https://www.npmjs.com/package/btrix">npm</a>
+      <a class="nav-extra" href="https://webrecorder.net">Webrecorder</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="band band-hero">
+    <div class="wrap">
+      <div class="hero-head">
+        <p class="eyebrow">A front end for Browsertrix Crawler</p>
+        <h1 class="display">Say what you<br>want archived.</h1>
+      </div>
+
+      <div class="hero">
+        <p class="lede">btrix settles the scope with you, writes the crawl config, and runs Browsertrix Crawler in a container on your machine. What comes back is a WACZ file you can replay, keep, and hand to anyone.</p>
+
+        <div class="install">
+          <div class="install-row">
+            <code class="install-cmd" id="cmd"><span>$</span>npm install -g btrix</code>
+            <button class="install-copy" id="copy" type="button" data-label="Copy">Copy</button>
+          </div>
+          <p class="install-req">macOS or Linux · Docker or Podman · Node 22.19+<br>Crawling needs no account. Bring your own model, or run one locally.</p>
+        </div>
+      </div>
+
+      <figure class="screen" id="screen" data-state="crawling">
+        <pre class="screen-out" aria-label="The btrix screen during a crawl"><span class="s-mark"> _     _         _
+| |__ | |_  _ _ (_)__ __    <span class="s-dim">high-fidelity web archives</span>
+| '_ \|  _|| '_|| |\ \ /    <span class="s-dim">Browsertrix Crawler, driven by conversation</span>
+|_.__/ \__||_|  |_|/_\_\</span>
+
+  <span class="s-dim">./btrix · 39G free · anthropic/claude-opus-5</span>
+  <span class="s-dim">3 configs · 1 archive 210M · 1 login profile</span>
+
+  cultprotest                <span class="s-dim">never run</span>
+  toi                        <span class="s-ok">done</span>           <span class="s-dim">84/84  210M</span>
+  wikipedia → web-archiving  <span class="s-run" id="i-state">crawling</span>       <span id="i-pages">0/12</span>
+
+  <span class="s-dim">♥ Webrecorder builds the crawler — <a href="https://opencollective.com/webrecorder">opencollective.com/webrecorder</a></span>
+
+<span class="s-mark">btrix</span> <span class="s-rule">│</span> <span class="s-run" id="w-state">crawling</span> wikipedia → web-archiving<span class="s-dim" id="w-tail"> · 0/12 · 0% still discovering · 0.0 pg/min</span>
+      <span class="s-dim" id="w-detail">archive 0B · profile 300M · 12G free · screencast :9037</span>
+      <span class="s-dim" id="w-fetch">fetching https://en.wikipedia.org/wiki/Web_archiving</span></pre>
+        <figcaption class="screen-cap">
+          <span class="screen-note">What btrix shows while a crawl runs. The widget repaints once a second.</span>
+          <button class="screen-again" id="again" type="button">Run it again</button>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="band band-light">
+    <div class="wrap">
+      <div class="band-head">
+        <p class="eyebrow">The exchange</p>
+        <h2 class="h2">It runs on sentences, not flags.</h2>
+        <p class="note">Everything btrix does, it does because you asked for it in the terminal. There is no config syntax to learn first — though the config it writes is plain YAML, and yours to edit.</p>
+      </div>
+
+      <div class="exchange">
+        <div class="exchange-head" aria-hidden="true">
+          <span>You say</span><span>btrix</span>
+        </div>
+
+        <div class="exchange-row">
+          <p class="exchange-say">“Archive the Wikipedia article on web archiving and everything it links to”</p>
+          <p class="exchange-do">Settles the scope with you first, then writes the config.</p>
+        </div>
+        <div class="exchange-row">
+          <p class="exchange-say">“Crawl wikipedia”</p>
+          <p class="exchange-do">Starts the crawl in the background. Progress appears in the widget.</p>
+        </div>
+        <div class="exchange-row">
+          <p class="exchange-say">“Stop it”</p>
+          <p class="exchange-do">Asks the crawler to shut down cleanly, keeping what it captured.</p>
+        </div>
+        <div class="exchange-row">
+          <p class="exchange-say">“Did that crawl work?”</p>
+          <p class="exchange-do">Reports what was actually captured, and flags anything suspicious.</p>
+        </div>
+        <div class="exchange-row">
+          <p class="exchange-say">“Replay web-archiving”</p>
+          <p class="exchange-do">Serves the archive and gives you a ReplayWeb.page link.</p>
+        </div>
+        <div class="exchange-row">
+          <p class="exchange-say">“This site needs a login”</p>
+          <p class="exchange-do">Opens a browser for <em>you</em> to sign in, and saves the profile. btrix never sees the password.</p>
+        </div>
+        <div class="exchange-row">
+          <p class="exchange-say">“Why did this site only give me one page?”</p>
+          <p class="exchange-do">Opens a real browser on the page and works out a custom behavior against it.</p>
+        </div>
+        <div class="exchange-row">
+          <p class="exchange-say">“What's taking up space?”</p>
+          <p class="exchange-do">Reports old working directories, and clears them if you agree.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band band-dark">
+    <div class="wrap">
+      <div class="band-head">
+        <p class="eyebrow">Recorded</p>
+        <h2 class="h2">One session, start to finish.</h2>
+      </div>
+
+      <figure class="frame">
+        <figcaption class="frame-bar">
+          <b>web-archiving.wacz</b>
+          <span>captured from en.wikipedia.org</span>
+          <span>terminal recording</span>
+        </figcaption>
+        <img src="demo.gif" width="1000" height="644" loading="lazy" decoding="async"
+             alt="A terminal session: describing five pages of en.wikipedia.org to archive, the crawl widget counting up, and the finished archive opening in ReplayWeb.page.">
+      </figure>
+      <p class="frame-cap">Five pages out of en.wikipedia.org: described, crawled, and replayed. Crawls are detached, so this one would have survived quitting the session.</p>
+    </div>
+  </section>
+
+  <section class="band band-light">
+    <div class="wrap">
+      <div class="band-head">
+        <p class="eyebrow">On disk</p>
+        <h2 class="h2">Everything in one directory, beside your work.</h2>
+      </div>
+
+      <div class="disk">
+        <pre class="tree" aria-label="The layout of a btrix store">./
+├── <b>btrix/</b>
+│   ├── config/wikipedia.yaml         <i>your crawl configs</i>
+│   ├── out/web-archiving.wacz        <i>finished archives</i>
+│   ├── out/web-archiving.btrix.json  <i>how each was made</i>
+│   ├── profiles/                     <i>browser logins</i>
+│   ├── runs/                         <i>working files, kept</i>
+│   └── failed/                       <i>nothing came back</i>
+└── notes.md, .git/                   <i>your stuff, untouched</i></pre>
+
+        <dl class="facts">
+          <div class="fact">
+            <dt>Put it anywhere</dt>
+            <dd><code>btrix --dir /Volumes/archive/wikipedia</code> moves the whole store — useful for a large crawl on an external disk. The store writes its own <code>.gitignore</code>, so archives and profiles stay out of version control and <code>config/</code> stays yours to commit.</dd>
+          </div>
+          <div class="fact">
+            <dt>Crawls outlive the session</dt>
+            <dd>Quit, come back tomorrow, and the widget picks the crawl back up. When one finishes you get a notification and a summary.</dd>
+          </div>
+          <div class="fact">
+            <dt>btrix never handles a password</dt>
+            <dd>For a site behind a login it opens a browser at <code>localhost:6080</code>. You sign in there; the profile it saves is kept private and mounted read-only into the crawl.</dd>
+          </div>
+          <div class="fact">
+            <dt>Any model, including a local one</dt>
+            <dd><code>/login</code> connects a Claude, ChatGPT or Copilot subscription, or set an API key. A server on your own machine that speaks the OpenAI API works too — <a href="https://github.com/edsu/btrix#using-a-local-model">LM Studio, Ollama, vLLM, llama.cpp</a>.</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="colophon">
+  <div class="wrap colophon-in">
+    <p class="colophon-mark">btrix<span>high-fidelity web archives</span><span>Browsertrix Crawler, driven by conversation</span></p>
+    <div class="colophon-text">
+      <p><a href="https://github.com/webrecorder/browsertrix-crawler">Browsertrix Crawler</a> and the WACZ format are the work of <a href="https://webrecorder.net">Webrecorder</a>. btrix is only a front end — if it is useful to you, <a href="https://opencollective.com/webrecorder">support them</a>.</p>
+      <ul class="colophon-meta">
+        <li><a href="https://github.com/edsu/btrix">GitHub</a></li>
+        <li><a href="https://www.npmjs.com/package/btrix">npm</a></li>
+        <li><a href="https://replayweb.page">ReplayWeb.page</a></li>
+        <li>MIT</li>
+        <li>Ed Summers</li>
+      </ul>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var screenEl = document.getElementById('screen');
+  var el = {
+    iState:  document.getElementById('i-state'),
+    iPages:  document.getElementById('i-pages'),
+    wState:  document.getElementById('w-state'),
+    wTail:   document.getElementById('w-tail'),
+    wDetail: document.getElementById('w-detail'),
+    wFetch:  document.getElementById('w-fetch')
+  };
+
+  // A depth-1 crawl out from one article. The total is not known up front —
+  // it grows as the frontier is discovered, which is why btrix says so.
+  var FINAL = 163, SEEN0 = 12, DISCOVER_UNTIL = 0.62, DURATION = 9000;
+
+  var PAGES = [
+    'Web_archiving', 'WARC_(file_format)', 'Internet_Archive', 'Wayback_Machine',
+    'Digital_preservation', 'Heritrix', 'Link_rot', 'Memento_Project',
+    'National_Digital_Information_Infrastructure', 'Robots.txt'
+  ];
+
+  // Fixed widths everywhere: a repainting widget must not resize the page.
+  var TAIL = 46, DETAIL = 56, FETCH = 62;
+  function fit(t, n) { return t.length > n ? t.slice(0, n - 1) + '…' : t.padEnd(n); }
+
+  function paint(crawled, seen, rate, size, url, discovering) {
+    var pct = Math.round((crawled / seen) * 100);
+    el.iPages.textContent = crawled + '/' + seen;
+    el.wTail.textContent = fit(
+      ' · ' + crawled + '/' + seen +
+      ' · ' + pct + '%' + (discovering ? ' still discovering' : '') +
+      ' · ' + rate.toFixed(1) + ' pg/min', TAIL);
+    el.wDetail.textContent = fit('archive ' + size + ' · profile 300M · 12G free · screencast :9037', DETAIL);
+    el.wFetch.textContent = fit('fetching https://en.wikipedia.org/wiki/' + url, FETCH);
+  }
+
+  function finish() {
+    screenEl.setAttribute('data-state', 'done');
+    el.iState.textContent = 'done'.padEnd(8);
+    el.wState.textContent = 'done';
+    el.iState.className = 's-ok';
+    el.wState.className = 's-ok';
+    el.iPages.textContent = FINAL + '/' + FINAL;
+    // Not crawling, so no rate and no screencast — see renderWidget().
+    el.wTail.textContent = fit(' · ' + FINAL + '/' + FINAL + ' · 100%', TAIL);
+    el.wDetail.textContent = fit('wacz 34M · profile 300M · 12G free', DETAIL);
+    el.wFetch.textContent = fit('wrote btrix/out/web-archiving.wacz', FETCH);
+  }
+
+  var raf = null, swap = null, url = PAGES[0];
+
+  function run() {
+    if (raf) cancelAnimationFrame(raf);
+    if (swap) clearInterval(swap);
+
+    screenEl.setAttribute('data-state', 'crawling');
+    el.iState.textContent = 'crawling';  // 8 chars — the column width
+    el.wState.textContent = 'crawling';
+    el.iState.className = 's-run';
+    el.wState.className = 's-run';
+
+    var i = 0;
+    swap = setInterval(function () { url = PAGES[++i % PAGES.length]; }, 460);
+
+    var start = null;
+    function frame(now) {
+      if (start === null) start = now;
+      var t = Math.min((now - start) / DURATION, 1);
+
+      // Pages lag the frontier, so crawled never overtakes seen.
+      var crawled = Math.round(FINAL * Math.pow(t, 1.35));
+      var discovering = t < DISCOVER_UNTIL;
+      var seen = discovering
+        ? SEEN0 + Math.round((FINAL - SEEN0) * Math.pow(t / DISCOVER_UNTIL, 0.7))
+        : FINAL;
+
+      paint(crawled, seen, 2.8 + t * 0.6, Math.round(t * 34) + 'M', url, discovering);
+
+      if (t < 1) { raf = requestAnimationFrame(frame); }
+      else { clearInterval(swap); swap = null; raf = null; finish(); }
+    }
+    raf = requestAnimationFrame(frame);
+  }
+
+  var still = window.matchMedia('(prefers-reduced-motion: reduce)');
+  function go() { if (still.matches) { finish(); } else { run(); } }
+  go();
+  document.getElementById('again').addEventListener('click', go);
+
+  var copy = document.getElementById('copy');
+  copy.addEventListener('click', function () {
+    navigator.clipboard.writeText('npm install -g btrix').then(function () {
+      copy.textContent = 'Copied';
+      setTimeout(function () { copy.textContent = copy.dataset.label; }, 1600);
+    });
+  });
+})();
+</script>
+</body>
+</html>
