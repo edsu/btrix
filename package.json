@@ -45,6 +45,7 @@
     "src",
     "skills",
     "scripts",
+    "vendor",
     "index.ts",
     "README.md",
     "LICENSE"

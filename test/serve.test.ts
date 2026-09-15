@@ -8,7 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { REPLAY_ORIGIN, parseRange, serveDir, type ReplayServer } from "../src/serve.ts";
+import { REPLAY_ORIGIN, bundleAvailable, parseRange, replayPage, serveDir, type ReplayServer } from "../src/serve.ts";
 
 describe("parseRange", () => {
   it("handles a closed range", () => {
@@ -48,7 +48,10 @@ describe("serveDir", () => {
   beforeEach(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "btrix-serve-"));
     fs.writeFileSync(path.join(dir, "example.wacz"), body);
-    server = await serveDir(dir, 18087);
+    // Port 0: the OS picks a free one, and serveDir reports what it actually
+    // bound. Every test in this file binding the same fixed port meant a run
+    // of rapid bind/close cycles, which intermittently reset a connection.
+    server = await serveDir(dir, 0);
   });
   afterEach(async () => {
     await server.close();
@@ -167,16 +170,97 @@ describe("serveDir", () => {
     expect(server.url("example.wacz")).not.toContain("localhost");
   });
 
-  it("builds a replayweb.page url", () => {
-    expect(server.url("example.wacz")).toBe(
-      `https://replayweb.page/?source=http://127.0.0.1:${server.port}/example.wacz`,
-    );
+  it("builds a same-origin url when the viewer is vendored in", () => {
+    // The point of vendoring: a page on replayweb.page fetching 127.0.0.1 is
+    // what browsers and LAN-blocking extensions refuse. Same origin, no hop.
+    expect(bundleAvailable()).toBe(true);
+    expect(server.url("example.wacz")).toBe(`http://127.0.0.1:${server.port}/?source=example.wacz`);
+    expect(server.url("example.wacz")).not.toContain("replayweb.page");
   });
 
   it("walks to the next port when one is taken", async () => {
     const second = await serveDir(dir, server.port);
     expect(second.port).toBe(server.port + 1);
     await second.close();
+  });
+
+  describe("the self-hosted viewer", () => {
+    // Replaying through replayweb.page means a public page fetching 127.0.0.1,
+    // which browsers and LAN-blocking extensions refuse. Served from here it is
+    // one origin, and it works with no network at all.
+    it("serves a page that embeds the archive", async () => {
+      const res = await get("");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/html");
+      const html = await res.text();
+      expect(html).toContain("<replay-web-page");
+      expect(html).toContain('source="example.wacz"');
+    });
+
+    it("serves the worker as javascript, or the browser refuses it outright", async () => {
+      const res = await get("replay/sw.js");
+      expect(res.status).toBe(200);
+      // application/octet-stream here is a silent, total failure.
+      expect(res.headers.get("content-type")).toBe("text/javascript");
+      expect(res.headers.get("service-worker-allowed")).toBe("/");
+    });
+
+    it("serves the app bundle as javascript", async () => {
+      const res = await get("ui.js");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("text/javascript");
+      expect(Number(res.headers.get("content-length"))).toBeGreaterThan(100_000);
+    });
+
+    it("only embeds an archive that is really in the directory", async () => {
+      // `source` lands in the DOM, so it is matched against the directory
+      // rather than escaped and hoped for.
+      const res = await get("?source=" + encodeURIComponent('"><script>alert(1)</script>'));
+      const html = await res.text();
+      expect(html).not.toContain("<script>alert(1)");
+      // Falls back to a real archive rather than embedding nothing.
+      expect(html).toContain('source="example.wacz"');
+    });
+
+    it("refuses a traversal dressed up as a source", async () => {
+      const res = await get("?source=" + encodeURIComponent("../../../../etc/passwd"));
+      const html = await res.text();
+      expect(html).not.toContain("etc/passwd");
+      expect(html).toContain('source="example.wacz"');
+    });
+
+    it("still resolves archives by basename, so the directory is not walkable", async () => {
+      const res = await get("../../../../etc/passwd");
+      expect(res.status).toBe(404);
+    });
+
+    it("answers HEAD on the generated page without a body", async () => {
+      const res = await fetch(`http://127.0.0.1:${server.port}/`, { method: "HEAD" });
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe("");
+    });
+
+    it("reports the page when the directory holds no archive", async () => {
+      const empty = fs.mkdtempSync(path.join(os.tmpdir(), "btrix-empty-"));
+      const s2 = await serveDir(empty, 0);
+      try {
+        const res = await fetch(`http://127.0.0.1:${s2.port}/`);
+        expect(res.status).toBe(404);
+        expect(await res.text()).toContain("No .wacz");
+      } finally {
+        await s2.close();
+        fs.rmSync(empty, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe("replayPage", () => {
+    it("points the worker at sw.js, which the server puts under replay/", () => {
+      // The element asks for ./replay/sw.js. Beside ui.js it is not found, and
+      // the only symptom is "Service worker not found".
+      expect(replayPage("a.wacz")).toContain('swName="sw.js"');
+      expect(replayPage("a.wacz")).toContain('src="./ui.js"');
+    });
   });
 });
 

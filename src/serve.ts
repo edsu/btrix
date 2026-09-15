@@ -71,7 +71,62 @@ export function parseRange(header: string, size: number): { start: number; end: 
 function contentType(file: string): string {
   if (file.endsWith(".wacz")) return "application/wacz+zip";
   if (file.endsWith(".json")) return "application/json";
+  // The service worker is refused outright unless it arrives as JavaScript,
+  // which is how a self-hosted replay page fails with nothing useful said.
+  if (file.endsWith(".js")) return "text/javascript";
+  if (file.endsWith(".html")) return "text/html; charset=utf-8";
   return "application/octet-stream";
+}
+
+/**
+ * The vendored ReplayWeb.page bundle, served from btrix's own package so the
+ * browser never leaves the loopback origin.
+ *
+ * Replaying through https://replayweb.page means a public page fetching
+ * 127.0.0.1, which browsers and LAN-blocking extensions refuse -- observed
+ * failing in Chrome and in Zen while a clean Firefox worked, on the same
+ * archive and server. Served from here it is all one origin: no CORS, no
+ * permission, no extension heuristic, and it works with no network at all.
+ *
+ * A fixed route list rather than a second directory to walk. The archive
+ * handler deliberately resolves by basename so it cannot be walked out of,
+ * and adding a servable tree would undo that.
+ */
+const BUNDLE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "vendor", "replaywebpage");
+
+const BUNDLE_ROUTES: Record<string, string> = {
+  "/ui.js": path.join(BUNDLE_DIR, "ui.js"),
+  // Must be under replay/: the element requests ./replay/sw.js, the default
+  // replayBase, and the worker's scope has to cover where pages are served.
+  "/replay/sw.js": path.join(BUNDLE_DIR, "replay", "sw.js"),
+};
+
+/** Whether the vendored bundle is present, so callers can fall back. */
+export function bundleAvailable(): boolean {
+  return Object.values(BUNDLE_ROUTES).every((f) => fs.existsSync(f));
+}
+
+/**
+ * The page that embeds the viewer. Generated rather than shipped as a file so
+ * the archive name is injected here, where it can be checked against the
+ * directory first -- `source` reaching the DOM unvalidated would be an
+ * injection in a page the user is about to open.
+ */
+export function replayPage(source: string): string {
+  return `<!doctype html>
+<html class="no-overflow">
+  <head>
+    <meta charset="utf-8">
+    <title>${source} — btrix</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="./ui.js"></script>
+    <style>html,body{margin:0;height:100%}replay-web-page{display:block;height:100vh}</style>
+  </head>
+  <body>
+    <replay-web-page source="${source}" swName="sw.js"></replay-web-page>
+  </body>
+</html>
+`;
 }
 
 export async function serveDir(dir: string, preferredPort = 8087, attempts = 10): Promise<ReplayServer> {
@@ -90,17 +145,65 @@ export async function serveDir(dir: string, preferredPort = 8087, attempts = 10)
       return;
     }
 
-    // Strip any query and refuse traversal: only files directly in dir.
     // A malformed escape makes decodeURIComponent throw, and throwing here is
     // an uncaught exception that takes the whole session down with it.
-    let name: string;
+    let route: string;
+    let query: URLSearchParams;
     try {
-      name = path.basename(decodeURIComponent((req.url ?? "/").split("?")[0]!));
+      const [rawPath = "/", rawQuery = ""] = (req.url ?? "/").split("?");
+      route = decodeURIComponent(rawPath);
+      query = new URLSearchParams(rawQuery);
     } catch {
       res.writeHead(400, CORS);
       res.end("bad request");
       return;
     }
+
+    // The replay page. `source` names an archive in this directory and nothing
+    // else: it ends up in the DOM, so it is matched against the directory
+    // rather than escaped and hoped for.
+    if (route === "/" || route === "/index.html") {
+      const wanted = query.get("source") ?? "";
+      const available = listArchiveFiles(dir);
+      const source = available.includes(path.basename(wanted)) ? path.basename(wanted) : available[0];
+      if (!source) {
+        res.writeHead(404, { ...CORS, "Content-Type": contentType(".html") });
+        res.end("<!doctype html><p>No .wacz in this directory.");
+        return;
+      }
+      const body = Buffer.from(replayPage(source), "utf8");
+      res.writeHead(200, { ...CORS, "Content-Type": contentType(".html"), "Content-Length": body.length });
+      if (req.method === "HEAD") return res.end();
+      res.end(body);
+      return;
+    }
+
+    // The vendored viewer, from a fixed list rather than a walkable tree.
+    const bundled = BUNDLE_ROUTES[route];
+    if (bundled) {
+      let body: Buffer;
+      try {
+        body = fs.readFileSync(bundled);
+      } catch {
+        res.writeHead(404, CORS);
+        res.end("replay bundle missing — run scripts/vendor-replay.sh");
+        return;
+      }
+      res.writeHead(200, {
+        ...CORS,
+        "Content-Type": contentType(bundled),
+        "Content-Length": body.length,
+        // The worker's scope has to cover /replay/, which is where it serves
+        // archived pages from.
+        ...(route === "/replay/sw.js" ? { "Service-Worker-Allowed": "/" } : {}),
+      });
+      if (req.method === "HEAD") return res.end();
+      res.end(body);
+      return;
+    }
+
+    // Archives, resolved by basename so the directory cannot be walked out of.
+    const name = path.basename(route);
     const file = path.join(dir, name);
     let size: number;
     try {
@@ -174,12 +277,19 @@ export async function serveDir(dir: string, preferredPort = 8087, attempts = 10)
   return {
     port,
     dir,
+    // Same origin as the archive, which is the whole point: a page on
+    // replayweb.page fetching 127.0.0.1 is what browsers and LAN-blocking
+    // extensions refuse. Falls back to the hosted viewer if the bundle was
+    // not vendored in, so a checkout without it still replays.
+    //
     // 127.0.0.1, not localhost. The listener above is IPv4-only, and on macOS
     // `localhost` resolves to ::1 first -- so a browser that does not fall
     // back to IPv4 reports a bare "NetworkError" and the archive looks broken
-    // when it is serving fine. Naming the address that was actually bound
-    // removes the guess.
-    url: (file: string) => `${REPLAY_ORIGIN}/?source=http://127.0.0.1:${port}/${encodeURIComponent(file)}`,
+    // when it is serving fine.
+    url: (file: string) =>
+      bundleAvailable()
+        ? `http://127.0.0.1:${port}/?source=${encodeURIComponent(file)}`
+        : `${REPLAY_ORIGIN}/?source=http://127.0.0.1:${port}/${encodeURIComponent(file)}`,
     close: () =>
       new Promise<void>((resolve) => {
         server.close(() => resolve());
