@@ -35,7 +35,7 @@ import { buildInventory } from "./src/inventory.ts";
 import { listProfiles } from "./src/profile.ts";
 import { configPath, createTools, listConfigs, normalizeName } from "./src/tools.ts";
 import { refuseGlob, refuseRead, refuseSearch, refuseWrite, type Scope } from "./src/paths.ts";
-import { resolveAgentDir } from "./src/agentdir.ts";
+import { resolveAgentDir } from "./src/agentdir.js";
 
 /** Free space below which starting a crawl is worth a confirmation. */
 const LOW_DISK_BYTES = 5 * 1024 ** 3;

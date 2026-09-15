@@ -8,7 +8,13 @@
  * here fails the suite rather than going quietly missing.
  *
  * Deliberately free of imports, so the launcher can read it without pulling in
- * the rest of the codebase.
+ * the rest of the codebase -- and plain JavaScript, because Node refuses to
+ * strip types for files under node_modules, so as .ts this ran from a linked
+ * working tree and broke on every real install. Type-checked via checkJs.
+ *
+ * No `as const` here, because that is TypeScript syntax and Node would not
+ * parse it. The lists are plain string arrays; the test below asserts their
+ * contents rather than leaning on the type.
  */
 
 export const BTRIX_TOOLS = [
@@ -22,7 +28,7 @@ export const BTRIX_TOOLS = [
   "btrix_clean",
   "btrix_browser",
   "btrix_eval",
-] as const;
+];
 
 /**
  * Built-ins the job needs. `read` must stay: pi only advertises skills in the
@@ -40,6 +46,6 @@ export const BTRIX_TOOLS = [
  * This is the model's toolset, not the user's. pi's `!` prefix is a separate
  * path and still runs whatever the user types.
  */
-export const HELPER_TOOLS = ["read", "write", "edit", "ls", "grep", "find"] as const;
+export const HELPER_TOOLS = ["read", "write", "edit", "ls", "grep", "find"];
 
 export const ALL_TOOLS = [...BTRIX_TOOLS, ...HELPER_TOOLS];

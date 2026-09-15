@@ -4,7 +4,7 @@
 
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { resolveAgentDir } from "../src/agentdir.ts";
+import { resolveAgentDir } from "../src/agentdir.js";
 
 const HOME = "/home/someone";
 

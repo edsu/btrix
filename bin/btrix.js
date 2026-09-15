@@ -4,7 +4,7 @@
  * pi.
  *
  * It starts a pi session with the btrix extension preloaded, a btrix system
- * prompt, and only the tools this job needs — read from src/toolnames.ts, so
+ * prompt, and only the tools this job needs — read from src/toolnames.js, so
  * the list cannot drift behind the tools that actually exist.
  */
 
@@ -19,10 +19,10 @@ const PKG = path.resolve(HERE, "..");
 
 // Read from the same list the tools are registered from, so the allowlist
 // cannot drift out of date the way it did.
-const { ALL_TOOLS } = await import(path.join(PKG, "src", "toolnames.ts"));
+const { ALL_TOOLS } = await import(path.join(PKG, "src", "toolnames.js"));
 const TOOLS = ALL_TOOLS.join(",");
 
-const { resolveAgentDir } = await import(path.join(PKG, "src", "agentdir.ts"));
+const { resolveAgentDir } = await import(path.join(PKG, "src", "agentdir.js"));
 const AGENT_DIR = resolveAgentDir();
 
 /**

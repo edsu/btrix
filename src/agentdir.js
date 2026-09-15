@@ -15,13 +15,22 @@
 import * as os from "node:os";
 import * as path from "node:path";
 
-export interface AgentDirEnv {
-  BTRIX_AGENT_DIR?: string;
-  PI_CODING_AGENT_DIR?: string;
-  HOME?: string;
-}
+/**
+ * Plain JavaScript, not TypeScript, and deliberately so: bin/btrix.js has to
+ * read this before pi starts, and Node refuses to strip types for files under
+ * node_modules. As .ts this worked from a linked working tree -- where the
+ * symlink resolves outside node_modules -- and broke on every real install.
+ * Type-checked all the same, via checkJs.
+ *
+ * @typedef {{ BTRIX_AGENT_DIR?: string, PI_CODING_AGENT_DIR?: string, HOME?: string }} AgentDirEnv
+ */
 
-export function resolveAgentDir(env: AgentDirEnv = process.env, home: string = os.homedir()): string {
+/**
+ * @param {AgentDirEnv} [env]
+ * @param {string} [home]
+ * @returns {string}
+ */
+export function resolveAgentDir(env = process.env, home = os.homedir()) {
   const explicit = env.BTRIX_AGENT_DIR?.trim() || env.PI_CODING_AGENT_DIR?.trim();
   if (explicit) return path.resolve(explicit.startsWith("~") ? path.join(home, explicit.slice(1)) : explicit);
   return path.join(home, ".btrix");

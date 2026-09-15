@@ -197,7 +197,7 @@ describe("the launcher's tool allowlist", () => {
     // It drifted once: six tools were unreachable through the btrix command
     // while working fine under `pi -e .`, because this list was written before
     // they existed.
-    const { BTRIX_TOOLS } = await import("../src/toolnames.ts");
+    const { BTRIX_TOOLS } = await import("../src/toolnames.js");
     const registered = createTools(monitor, () => store)
       .map((t) => t.name)
       .sort();
@@ -205,7 +205,7 @@ describe("the launcher's tool allowlist", () => {
   });
 
   it("keeps read, and grants no shell", async () => {
-    const { HELPER_TOOLS } = await import("../src/toolnames.ts");
+    const { HELPER_TOOLS } = await import("../src/toolnames.js");
     const granted: readonly string[] = HELPER_TOOLS;
 
     // pi only lists skills in the system prompt when read or bash is enabled,
