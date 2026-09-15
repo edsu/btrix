@@ -342,7 +342,16 @@ a:hover{text-decoration-thickness:2px}
 }
 </style>
 
-<!-- Privacy-friendly analytics by Plausible -->
+<!-- Privacy-friendly analytics by Plausible. Cookieless and no personal data,
+     so there is no consent banner to show.
+
+     No integrity hash on purpose. The loader is generated per site and served
+     with cache-control: max-age=60 and no etag, so Plausible plainly expects to
+     change it; a pinned sha384 would fail closed on their next update and take
+     analytics down silently. Access-Control-Allow-Origin is `*`, so SRI would
+     work today -- it is the churn, not the CORS, that rules it out. Proxying
+     the script from this origin would put the hash under our control, at the
+     cost of having to track their releases. -->
 <script async src="https://plausible.io/js/pa-z9fd9yzowLcKQVHn6BBE2.js"></script>
 <script>
   window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
