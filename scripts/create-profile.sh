@@ -10,6 +10,12 @@
 # The login is done by the person, in that browser. Nothing here takes, stores
 # or forwards credentials, and profiles/*.tar.gz hold session cookies, so they
 # are kept out of version control by the store's own .gitignore.
+#
+# Both ports are published on 127.0.0.1 rather than 0.0.0.0. A bare
+# `-p 6080:6080` would put this unauthenticated noVNC session -- the one a
+# password and 2FA code get typed into -- on every interface, so anyone on the
+# same network could watch and drive it. 9223 is the profile browser's own
+# control port, which is worse: it hands over the authenticated session.
 
 set -euo pipefail
 
@@ -36,8 +42,8 @@ fi
 "$engine" pull "webrecorder/browsertrix-crawler:${BTRIX_CRAWLER_VERSION:-latest}"
 
 exec "$engine" run \
-  -p 6080:6080 \
-  -p 9223:9223 \
+  -p 127.0.0.1:6080:6080 \
+  -p 127.0.0.1:9223:9223 \
   --rm \
   -v "$profiles_dir":/crawls/profiles/ \
   "webrecorder/browsertrix-crawler:${BTRIX_CRAWLER_VERSION:-latest}" \

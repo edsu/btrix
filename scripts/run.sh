@@ -62,8 +62,10 @@ if [ -n "$profiles_dir" ] && [ -d "$profiles_dir" ]; then
   profile_mount=(-v "$profiles_dir":/crawls/profiles/:ro)
 fi
 
+# The screencast is bound to 127.0.0.1: a crawl running with a profile shows
+# logged-in pages, so this is not something to publish to the network.
 exec "$engine" run \
-  -p 9037:9037 \
+  -p 127.0.0.1:9037:9037 \
   --rm \
   -v "$run_dir":/crawls/ \
   "${profile_mount[@]}" \
