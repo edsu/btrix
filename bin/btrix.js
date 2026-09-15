@@ -55,17 +55,39 @@ function findPi() {
  * Since btrix has its own agent directory, this is its own preference to set
  * and not a change to anybody's pi configuration.
  */
+/**
+ * The agent directory holds the model credential (auth.json), any provider
+ * keys written into models.json, and every session transcript. Created at the
+ * default umask it comes out 0755, so any other account on the machine can
+ * traverse it and read whatever pi did not individually chmod -- models.json
+ * is written 0644.
+ *
+ * This has to run before pi does: pi's own mkdirSync is `recursive: true`,
+ * which is a no-op on an existing directory and so cannot tighten the mode
+ * afterwards. The chmod covers installs that already have a loose directory,
+ * since mkdir will not touch one that exists.
+ */
+function secureAgentDir() {
+  try {
+    fs.mkdirSync(AGENT_DIR, { recursive: true, mode: 0o700 });
+    if ((fs.statSync(AGENT_DIR).mode & 0o077) !== 0) fs.chmodSync(AGENT_DIR, 0o700);
+  } catch {
+    // Not worth failing to start over; pi will report a real problem here.
+  }
+}
+
 function quietFirstRun() {
   try {
     const file = path.join(AGENT_DIR, "settings.json");
     if (fs.existsSync(file)) return;
-    fs.mkdirSync(AGENT_DIR, { recursive: true });
+    fs.mkdirSync(AGENT_DIR, { recursive: true, mode: 0o700 });
     fs.writeFileSync(file, `${JSON.stringify({ quietStartup: true }, null, 2)}\n`);
   } catch {
     // A noisier startup is not worth failing to start over.
   }
 }
 
+secureAgentDir();
 quietFirstRun();
 
 const systemPrompt = fs.readFileSync(path.join(PKG, "assets", "system-prompt.md"), "utf8");

@@ -128,6 +128,13 @@ saved into the store. Profiles hold session cookies, so they are kept private,
 ignored by git, and mounted read-only into a crawl. Sessions expire — if a
 logged-in crawl comes back full of login pages, make the profile again.
 
+The browser noVNC runs on is published on loopback only, so the session you
+type a password into is reachable from your machine and nowhere else.
+
+Your model credential is a different thing, and lives in `~/.btrix`, which
+btrix creates `0700`. If you add a provider by hand (see below), the `apiKey`
+goes into `~/.btrix/models.json` in the clear — `chmod 600` it.
+
 ## Using a local model
 
 btrix talks to whatever model the harness can reach, so a local server that
@@ -153,6 +160,11 @@ touch the configuration of anyone who also uses pi directly.
   }
 }
 ```
+
+`models.json` is written in the clear, so `chmod 600 ~/.btrix/models.json`
+once it holds a real key. The LM Studio example below does not, but the same
+shape is how you would add OpenRouter, Together, Groq or a hosted vLLM, and
+those keys are billable.
 
 Then `btrix --provider lmstudio --model qwen/qwen3.8-27b`, or pick it in
 `/model` and press Ctrl+S to make it the default. That is the whole setup: no

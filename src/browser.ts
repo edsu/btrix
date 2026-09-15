@@ -15,6 +15,7 @@
  */
 
 import { spawn } from "node:child_process";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type CdpTarget, evaluate, navigate, pageInfo } from "./cdp.ts";
@@ -27,6 +28,23 @@ const BROWSER_SH = path.join(HERE, "..", "scripts", "browser.sh");
 /** noVNC, where the container's browser can be watched and clicked. */
 export const VNC_PORT = 6080;
 const READY_TIMEOUT_MS = 180_000;
+
+/**
+ * Wait for a killed process to let go of its profile directory. Removing it
+ * while Chrome is still shutting down races the last profile write and leaves
+ * a partial directory behind, so this waits -- but not forever, since a wedged
+ * browser must not hold up session shutdown.
+ */
+function exited(child: { once: (e: string, f: () => void) => void; exitCode: number | null }, ms: number): Promise<void> {
+  if (child.exitCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    child.once("exit", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
 
 export type BrowserKind = "local" | "container";
 
@@ -150,8 +168,19 @@ export class ScratchBrowser {
     const kind = this.kind;
     this.kind = undefined;
     if (kind === "local") {
-      this.local?.process.kill();
+      const local = this.local;
       this.local = undefined;
+      if (local) {
+        local.process.kill();
+        // btrix_browser and btrix_eval both describe this profile as a
+        // throwaway that saves nothing. It only is if it goes away: a login
+        // performed while working out a behavior leaves a cookie jar that
+        // every later session would otherwise reuse and read.
+        await exited(local.process, 3_000);
+        await fs.promises.rm(local.profileDir, { recursive: true, force: true }).catch(() => {
+          // A profile Chrome still holds is left for the next run to replace.
+        });
+      }
       return;
     }
     if (kind === "container") {

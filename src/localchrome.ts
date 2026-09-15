@@ -86,7 +86,9 @@ export async function launchChrome(
     };
   }
 
-  fs.mkdirSync(profileDir, { recursive: true });
+  // A cookie jar, if a login happens while working out a behavior. 0700 so it
+  // is not readable by other accounts for as long as it exists.
+  fs.mkdirSync(profileDir, { recursive: true, mode: 0o700 });
   // A stale port file would be read as the live one.
   try {
     fs.rmSync(path.join(profileDir, "DevToolsActivePort"));
