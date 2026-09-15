@@ -1,0 +1,84 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    # btrix declares darwin and linux, and the differences bite in practice:
+    # shasum vs sha256sum in the vendor script, and /var -> /private/var
+    # symlinks in the path tests. Running one platform would hide both.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # engines says >=22.19. Testing the floor as well as current would be
+          # better; this at least is not "whatever the runner had today".
+          node-version: 22.19
+          cache: npm
+
+      - run: npm ci
+
+      - name: typecheck
+        run: npm run check
+
+      - name: tests
+        run: npm test
+
+      # The digests in vendor/replaywebpage/provenance.json are only worth
+      # anything if something re-hashes them. Nothing did until this ran: the
+      # vendor script writes the manifest from the files it just copied, so it
+      # agrees with itself by construction.
+      - name: vendored bundle matches its recorded digests
+        run: ./scripts/vendor-replay.sh --verify
+
+  # 0.1.0 shipped an install that could not start: bin/btrix.js imported .ts
+  # files, and node refuses to strip types under node_modules. Every test
+  # passed, because `npm link` resolves the symlink to a path outside
+  # node_modules where stripping is allowed. Only a real install shows it.
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19
+          cache: npm
+      - run: npm ci
+
+      - name: pack, install elsewhere, and run it
+        run: |
+          set -euo pipefail
+          tarball="$(npm pack --silent)"
+          work="$(mktemp -d)"
+          cp "$tarball" "$work/"
+          cd "$work"
+          npm init -y >/dev/null
+          npm install "./$tarball"
+          # Away from the checkout, with the files genuinely under
+          # node_modules, and an agent dir it cannot disturb.
+          cd "$(mktemp -d)"
+          BTRIX_AGENT_DIR="$(mktemp -d)" "$work/node_modules/.bin/btrix" --version
+
+      - name: the viewer is in the tarball, or replay silently goes remote
+        run: |
+          set -euo pipefail
+          tarball="$(npm pack --silent)"
+          tar tzf "$tarball" | grep -q 'package/vendor/replaywebpage/ui.js'
+          tar tzf "$tarball" | grep -q 'package/vendor/replaywebpage/replay/sw.js'
+          tar tzf "$tarball" | grep -q 'package/vendor/replaywebpage/LICENSE'

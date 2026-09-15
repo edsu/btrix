@@ -24,7 +24,18 @@ out="$here/vendor/replaywebpage"
 # hex -- because that is what a bill of materials consumes. Not `sha256-<hex>`,
 # which wears the SRI prefix over an SBOM body: SRI wants base64, so anyone
 # pasting one into an integrity attribute got a silent failure.
-digest() { shasum -a 256 "$1" | cut -d" " -f1; }
+# shasum is a Perl script and is not guaranteed on a Linux box; sha256sum is
+# the GNU one and is not on macOS. btrix declares both platforms, so try both.
+digest() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | cut -d" " -f1
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d" " -f1
+  else
+    echo "need shasum or sha256sum" >&2
+    exit 1
+  fi
+}
 
 # Re-hash what is on disk against what was recorded. Without this the digests
 # are decorative: the script hashes the files it just copied, so provenance.json
