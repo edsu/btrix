@@ -8,7 +8,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { refuseRead, refuseWrite, resolveForCheck, type Scope, within } from "../src/paths.ts";
+import {
+  refuseGlob,
+  refuseRead,
+  refuseSearch,
+  refuseWrite,
+  resolveForCheck,
+  type Scope,
+  within,
+} from "../src/paths.ts";
 
 let dir: string;
 let scope: Scope;
@@ -171,5 +179,48 @@ describe("resolveForCheck", () => {
   it("resolves a path that does not exist yet", () => {
     const want = path.join(scope.storeRoot, "config", "new", "deep", "x.yaml");
     expect(resolveForCheck(scope.cwd, want)).toBe(want);
+  });
+});
+
+describe("refuseSearch", () => {
+  // ls, grep and find replace what bash was granted for, and their path is
+  // optional rather than required.
+  it("allows an omitted path, which means the working directory", () => {
+    expect(refuseSearch(scope, undefined)).toBeUndefined();
+    expect(refuseSearch(scope, "")).toBeUndefined();
+  });
+
+  it("holds a given path to the same roots as read", () => {
+    expect(refuseSearch(scope, path.join(scope.storeRoot, "runs"))).toBeUndefined();
+    expect(refuseSearch(scope, path.join(scope.packageRoot, "skills"))).toBeUndefined();
+    expect(refuseSearch(scope, path.join(home, ".ssh"))).toMatch(/cannot search/);
+    expect(refuseSearch(scope, "/etc")).toMatch(/cannot search/);
+  });
+});
+
+describe("refuseGlob", () => {
+  // The pattern is expanded after the path has been checked, so a path that
+  // passed can still be walked out of.
+  it("refuses a pattern that climbs out", () => {
+    expect(refuseGlob("../../**")).toMatch(/walks up/);
+    expect(refuseGlob("../secrets/*")).toMatch(/walks up/);
+    expect(refuseGlob("a/../../b")).toMatch(/walks up/);
+    expect(refuseGlob("**/../../id_rsa")).toMatch(/walks up/);
+  });
+
+  it("refuses an absolute pattern", () => {
+    expect(refuseGlob("/etc/**")).toMatch(/absolute path/);
+  });
+
+  it("allows the ordinary ones", () => {
+    for (const ok of ["**/*.log", "*.wacz", "collections/**/*.warc.gz", "runner.log", undefined, ""]) {
+      expect(refuseGlob(ok), String(ok)).toBeUndefined();
+    }
+  });
+
+  it("is not fooled by a name that merely starts with dots", () => {
+    // "..foo" is a filename, not a climb.
+    expect(refuseGlob("..foo/*")).toBeUndefined();
+    expect(refuseGlob(".env")).toBeUndefined();
   });
 });

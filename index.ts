@@ -34,7 +34,7 @@ import { firstRunPanel, modelLabel, probeAuth, readyHeader } from "./src/firstru
 import { buildInventory } from "./src/inventory.ts";
 import { listProfiles } from "./src/profile.ts";
 import { configPath, createTools, listConfigs, normalizeName } from "./src/tools.ts";
-import { refuseRead, refuseWrite, type Scope } from "./src/paths.ts";
+import { refuseGlob, refuseRead, refuseSearch, refuseWrite, type Scope } from "./src/paths.ts";
 import { resolveAgentDir } from "./src/agentdir.ts";
 
 /** Free space below which starting a crawl is worth a confirmation. */
@@ -404,19 +404,20 @@ export default function (pi: ExtensionAPI) {
       return refusal ? { block: true, reason: refusal } : undefined;
     }
 
-    if (event.toolName === "bash") {
-      // Deliberately not scoped by inspecting the command. $HOME, subshells,
-      // pipes and eval make that unsound, and a gate that looks like it works
-      // is worse than none -- so put a person in front of it instead.
-      const command = String((event.input as { command?: unknown }).command ?? "");
-      if (!ctx.hasUI) {
-        return {
-          block: true,
-          reason: "bash needs a confirmation, and there is no UI to ask in. Use the btrix_* tools, read or write.",
-        };
-      }
-      const ok = await ctx.ui.confirm("Run this command?", command);
-      return ok ? undefined : { block: true, reason: "The user declined to run that command." };
+    // ls, grep and find replace what bash was granted for. Their path is
+    // optional, and both glob-taking tools expand their pattern after the path
+    // is checked, so the pattern is checked too.
+    if (event.toolName === "ls" || event.toolName === "grep" || event.toolName === "find") {
+      const input = event.input as { path?: unknown; glob?: unknown; pattern?: unknown };
+      const refusal =
+        refuseSearch(scope(), input.path === undefined ? undefined : String(input.path)) ??
+        refuseGlob(input.glob === undefined ? undefined : String(input.glob)) ??
+        // find's `pattern` is a glob; grep's is a regex over file contents and
+        // is not a path, so only find's is checked.
+        (event.toolName === "find" && input.pattern !== undefined
+          ? refuseGlob(String(input.pattern))
+          : undefined);
+      return refusal ? { block: true, reason: refusal } : undefined;
     }
 
     if (event.toolName !== "btrix_run") return undefined;

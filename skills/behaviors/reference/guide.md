@@ -383,11 +383,15 @@ circumventing CAPTCHAs / bot-detection is out of bounds.)
 
 How to spot it in a run:
 
-```sh
-# The crawler detects many of these and retries. Look for this log line:
-grep -a '"message":"Page possibly rate limited, retrying"' collections/<name>/logs/*.log | wc -l
+The retry count is in the crawler's own log, so `grep` it directly — the
+pattern `"message":"Page possibly rate limited, retrying"` under
+`collections/<name>/logs/`.
 
-# Did the interstitial get recorded as a response? (its distinctive text)
+Whether the interstitial was *recorded* takes decompressing the WARCs, which
+needs a shell btrix does not have. Ask the user to run this themselves with
+`!`, and read the number back:
+
+```sh
 for w in collections/<name>/archive/rec-*.warc.gz; do gunzip -c "$w"; done \
   | grep -a -c -i "just a quick check"
 ```

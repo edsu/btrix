@@ -204,9 +204,21 @@ describe("the launcher's tool allowlist", () => {
     expect([...BTRIX_TOOLS].sort()).toEqual(registered);
   });
 
-  it("keeps a file-reading tool, or skills stop being advertised", async () => {
-    // pi only lists skills in the system prompt when read or bash is enabled.
+  it("keeps read, and grants no shell", async () => {
     const { HELPER_TOOLS } = await import("../src/toolnames.ts");
-    expect(HELPER_TOOLS.some((t) => t === "read" || t === "bash")).toBe(true);
+    const granted: readonly string[] = HELPER_TOOLS;
+
+    // pi only lists skills in the system prompt when read or bash is enabled,
+    // and bash is not on offer.
+    expect(granted).toContain("read");
+
+    // Every tool the model gets takes a path, so the scope in paths.ts applies
+    // to all of them. A shell could not be held to it: $HOME, subshells and
+    // eval defeat any inspection of the command.
+    expect(granted).not.toContain("bash");
+    expect(granted).not.toContain("powershell");
+
+    // What bash was actually granted for -- looking at crawler output.
+    expect(granted).toEqual(expect.arrayContaining(["ls", "grep", "find"]));
   });
 });

@@ -182,8 +182,8 @@ Four things that are easy to get wrong:
   understand the `developer` role or `reasoning_effort`. Add
   `"reasoning": true` to a model entry if the server reports thinking
   separately.
-- btrix is entirely tool-driven — ten crawl tools plus `read`, `write`, `edit`
-  and `bash` — so pick a model with real tool-calling support. Small models
+- btrix is entirely tool-driven — ten crawl tools plus `read`, `write`, `edit`,
+  `ls`, `grep` and `find` — so pick a model with real tool-calling support. Small models
   tend to manage single calls and then lose track across a longer job.
 
 ## Writing a custom behavior

@@ -122,3 +122,30 @@ export function refuseWrite(scope: Scope, raw: string): string | undefined {
 export function refuseRead(scope: Scope, raw: string): string | undefined {
   return refuse(scope, raw, readRoots(scope), "read");
 }
+
+/**
+ * The same boundary for `ls`, `grep` and `find`, whose path is optional --
+ * omitted means the working directory, which is allowed.
+ */
+export function refuseSearch(scope: Scope, raw: string | undefined): string | undefined {
+  if (raw === undefined || !raw.trim()) return undefined;
+  return refuse(scope, raw, readRoots(scope), "search");
+}
+
+/**
+ * `grep` takes a glob and `find` takes a glob pattern, and both are expanded
+ * after the path check has already happened -- so `../../**` would walk out of
+ * a directory that passed. A `..` segment has no legitimate use in either here,
+ * so it is refused rather than resolved.
+ */
+export function refuseGlob(raw: string | undefined): string | undefined {
+  if (raw === undefined || raw === "") return undefined;
+  const parts = raw.split(/[\\/]/);
+  if (parts.includes("..")) {
+    return `The pattern ${raw} walks up out of the directory being searched, which btrix does not allow.`;
+  }
+  if (path.isAbsolute(raw)) {
+    return `The pattern ${raw} is an absolute path; give a path plus a relative pattern instead.`;
+  }
+  return undefined;
+}

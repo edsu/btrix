@@ -25,10 +25,21 @@ export const BTRIX_TOOLS = [
 ] as const;
 
 /**
- * Built-ins the job needs. `read` or `bash` must stay: pi only advertises
- * skills in the system prompt when one of them is available, so dropping both
- * would silently hide the behaviors and replay skills.
+ * Built-ins the job needs. `read` must stay: pi only advertises skills in the
+ * system prompt when `read` or `bash` is available, and `bash` is deliberately
+ * not granted.
+ *
+ * No `bash`, and no `powershell`. Every tool listed here takes a path, which
+ * means index.ts can hold all of them to the same boundary -- the working
+ * directory, the store, and btrix's own files for reads. A shell cannot be
+ * held to anything: `$HOME`, subshells and `eval` defeat any inspection of the
+ * command, so granting it would have made the path gate advisory. `ls`, `grep`
+ * and `find` cover what bash was actually here for, which was looking at
+ * crawler output.
+ *
+ * This is the model's toolset, not the user's. pi's `!` prefix is a separate
+ * path and still runs whatever the user types.
  */
-export const HELPER_TOOLS = ["read", "write", "edit", "bash"] as const;
+export const HELPER_TOOLS = ["read", "write", "edit", "ls", "grep", "find"] as const;
 
 export const ALL_TOOLS = [...BTRIX_TOOLS, ...HELPER_TOOLS];
