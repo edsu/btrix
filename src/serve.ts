@@ -243,8 +243,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   for (const a of archives) process.stdout.write(`\n  ${server.url(a)}\n`);
   if (!archives.length) process.stdout.write("\n(no .wacz files in that directory)\n");
   process.stdout.write(
-    "\nChrome 141+ asks for Local Network Access permission on first load; click Allow, " +
-      "or drag the .wacz onto https://replayweb.page instead.\n",
+    "\nIf the browser says \"Failed to fetch\", the archive is fine — some browsers and " +
+      "extensions block a page on replayweb.page from reaching 127.0.0.1. Drag the .wacz " +
+      "onto https://replayweb.page instead; it reads from disk and always works.\n",
   );
 }
 

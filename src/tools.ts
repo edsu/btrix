@@ -394,11 +394,11 @@ export function createTools(
       const d = result.details as { url?: string; port?: number } | undefined;
       if (!d?.url) return linesComponent(result.content.map((c: any) => String(c.text ?? "")));
       const lines = [theme.fg("mdLink", d.url), theme.fg("dim", `served on port ${d.port}`)];
-      // The Chrome permission caveat is long; keep it for the expanded view.
+      // The troubleshooting is long; keep it for the expanded view.
       if (options.expanded) {
         lines.push(...result.content.map((c: any) => theme.fg("dim", String(c.text ?? ""))));
       } else {
-        lines.push(theme.fg("dim", "Chrome may ask for local network permission on first load — click Allow"));
+        lines.push(theme.fg("dim", "\"Failed to fetch\" here means the browser blocked it, not a bad archive"));
       }
       return linesComponent(lines);
     },
@@ -448,10 +448,17 @@ export function createTools(
       const config = inv.configs.find((c) => c.collection === archive.collection);
 
       const notes = [
-        "Chrome 141+ and Edge require the Local Network Access permission for a page on replayweb.page to reach " +
-          "127.0.0.1: the user must click Allow on the first load, or replay fails with " +
-          '"An unexpected error occured: TypeError: Failed to fetch", which looks like a corrupt archive but is not. ' +
-          "Dragging the .wacz onto replayweb.page avoids the permission entirely.",
+        // Observed 2026-09-15: the same archive and the same server replayed in
+        // a clean Firefox and failed in Chrome 153 and in Zen, so this is the
+        // browser refusing the request, not a bad capture. Do not promise a
+        // permission prompt -- none was offered in either failing browser.
+        "If replay shows \"An unexpected error occured: TypeError: Failed to fetch\", the archive is fine — the " +
+          "browser blocked the page on replayweb.page from fetching 127.0.0.1. It is worth saying that plainly, " +
+          "because it reads like a corrupt capture. Three things that get around it, cheapest first: drag the " +
+          ".wacz file onto replayweb.page, which reads from disk and needs no local request at all; try another " +
+          "browser; or check for an extension blocking LAN access (uBlock Origin ships a \"Block Outsider " +
+          "Intrusion into LAN\" list) and for Chrome's Local Network Access permission on the site. The file is at " +
+          `${archive.path}.`,
       ];
       // Page search only works if the crawl wrote page text.
       if (config && !config.textToPages) {

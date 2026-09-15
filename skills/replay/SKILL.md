@@ -11,20 +11,33 @@ them in this order.
 
 ## "An unexpected error occured: TypeError: Failed to fetch"
 
-Almost always the **Local Network Access permission**, not a bad archive.
+The browser refused to let the page on `replayweb.page` fetch `127.0.0.1`.
+The archive is almost certainly fine, and saying so first matters — the
+message reads like a corrupt capture.
 
-Chrome 141+ and Edge require a public HTTPS origin like `replayweb.page` to ask
-permission before reaching `http://localhost`. Chrome prompts on first load;
-if it was dismissed or missed, the fetch fails with exactly that message.
+**Say the archive is healthy before troubleshooting.** To show it rather than
+assert it, ask the archive for a byte range. A `206 Partial Content` while the
+browser fails is the signature: server and archive are both fine, and the
+block is entirely browser-side.
 
-- Tell the user to reload and click **Allow**, or grant it via the icon in the
-  address bar.
-- To confirm it is the permission rather than the server, request the archive
-  from the shell. A `206 Partial Content` there while the browser fails is the
-  signature — the server and the archive are both healthy.
-- Dragging the `.wacz` file onto <https://replayweb.page> sidesteps the
-  permission entirely, because no local network request is made. That is the
-  fastest way to unblock someone.
+Then, cheapest first:
+
+- **Drag the `.wacz` onto <https://replayweb.page>.** It reads from disk, makes
+  no local request, and always works. This is the fastest way to unblock
+  someone and it is worth offering first.
+- **Try another browser.** This varies by browser *and by profile*: the same
+  archive on the same server has been seen replaying in a clean Firefox while
+  failing in Chrome and in Zen on the same machine, the same minute.
+- **Look for an extension blocking LAN access.** uBlock Origin ships a "Block
+  Outsider Intrusion into LAN" filter list that blocks exactly this. A private
+  or incognito window, where extensions are usually off, is a quick way to
+  tell — if it replays there, an extension is the cause.
+- **Check the site's Local Network Access permission** in Chrome. Do not
+  promise a prompt: on Chrome 153 no prompt was offered at all, so telling the
+  user to "click Allow" sends them looking for something that is not there.
+
+Do not conclude the crawl is broken from this message alone. Confirm with a
+range request first.
 
 ## Replay loads, but pages show *live* content
 
