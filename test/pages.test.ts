@@ -128,7 +128,7 @@ describe("analyzePages", () => {
     const r = report([page(), page({ url: "https://x.test/gone", status: 404 }), page({ url: "https://x.test/e", status: 500 })]);
     expect(r.statuses.map((s) => s.value).sort()).toEqual([200, 404, 500]);
     expect(r.notOk).toHaveLength(2);
-    expect(reviewForModel("c", r)).toContain("404 https://x.test/gone");
+    expect(reviewForModel("c", r)).toContain("404 ‹https://x.test/gone›");
   });
 
   it("notices a scope wider than the seed host", () => {

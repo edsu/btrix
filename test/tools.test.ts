@@ -146,7 +146,7 @@ describe("btrix_review", () => {
     const result: any = await run(tool("btrix_review"), { name: "sulnews" });
     const out = said(result);
     expect(out).toContain("2 pages captured");
-    expect(out).toContain("404 https://x.test/b");
+    expect(out).toContain("404 ‹https://x.test/b›");
     expect(result.details.report.total).toBe(2);
   });
 

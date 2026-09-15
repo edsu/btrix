@@ -12,6 +12,7 @@ import { WORDMARK } from "./wordmark.ts";
 import { SAMPLE, type PagesReport } from "./pages.ts";
 import { nextStep } from "./inventory.ts";
 import { humanBytes, humanDuration } from "./sizes.ts";
+import { untrusted, UNTRUSTED_NOTE } from "./untrusted.ts";
 import type { CrawlStats } from "./stats.ts";
 
 /**
@@ -157,10 +158,10 @@ export function renderForModel(s: CrawlStats): string {
   if (s.sinceLastPage !== undefined && s.state === "crawling") {
     parts.push(`last page completed ${humanDuration(s.sinceLastPage)} ago`);
   }
-  if (s.state === "crawling" && s.pending[0]) parts.push(`fetching ${s.pending[0].url}`);
+  if (s.state === "crawling" && s.pending[0]) parts.push(`fetching ${untrusted(s.pending[0].url)}`);
   if (s.waczPath) parts.push(`wacz at ${s.waczPath}`);
   if (s.state === "stopped") parts.push("no container running and no wacz — the crawl ended early");
-  if (s.lastProblem) parts.push(`last warning/error: ${s.lastProblem}`);
+  if (s.lastProblem) parts.push(`last warning/error: ${untrusted(s.lastProblem)}`);
   if (s.windowMs < 30_000 && s.pagesPerMin !== undefined) parts.push("(rates based on <30s of history)");
   return parts.join(" · ");
 }
@@ -336,8 +337,10 @@ export function reviewForModel(name: string, r: PagesReport): string {
       const thin = counted(r, "thinPages", r.thinPages);
       lines.push(
         `${thin.count} page(s) under ${r.thinThreshold} chars${thin.note} — ` +
-          `judge whether these are real content or a block page:\n` +
-          r.thinPages.map((p) => `  ${p.textLength} chars · ${p.title ?? "(no title)"} · ${p.url}`).join("\n"),
+          `judge whether these are real content or a block page (${UNTRUSTED_NOTE}):\n` +
+          r.thinPages
+            .map((p) => `  ${p.textLength} chars · ${untrusted(p.title, "(no title)")} · ${untrusted(p.url)}`)
+            .join("\n"),
       );
     }
   }
@@ -346,8 +349,11 @@ export function reviewForModel(name: string, r: PagesReport): string {
     // Many pages sharing one title is the signature of an interstitial, and
     // also of a legitimately templated site. The model has to decide which.
     lines.push(
-      "titles shared by several pages — an interstitial looks like this, but so does a templated site:\n" +
-        r.repeatedTitles.map((t) => `  ${t.count}× "${t.title}" e.g. ${t.sample[0]}`).join("\n"),
+      `titles shared by several pages — an interstitial looks like this, but so does a templated site
+(${UNTRUSTED_NOTE}):\n` +
+        r.repeatedTitles
+          .map((t) => `  ${t.count}× ${untrusted(t.title)} e.g. ${untrusted(String(t.sample[0] ?? ""))}`)
+          .join("\n"),
     );
   }
 
@@ -356,7 +362,8 @@ export function reviewForModel(name: string, r: PagesReport): string {
   if (r.notOk.length) {
     const nok = counted(r, "notOk", r.notOk);
     lines.push(
-      `${nok.count} non-2xx page(s)${nok.note}:\n` + r.notOk.map((p) => `  ${p.status} ${p.url}`).join("\n"),
+      `${nok.count} non-2xx page(s)${nok.note}:\n` +
+        r.notOk.map((p) => `  ${p.status} ${untrusted(p.url)}`).join("\n"),
     );
   }
 
@@ -371,7 +378,7 @@ export function reviewForModel(name: string, r: PagesReport): string {
     const partial = counted(r, "partialLoads", r.partialLoads);
     lines.push(
       `${partial.count} page(s) did not fully load (loadState below 4)${partial.note}:\n` +
-        r.partialLoads.map((p) => `  loadState ${p.loadState} ${p.url}`).join("\n"),
+        r.partialLoads.map((p) => `  loadState ${p.loadState} ${untrusted(p.url)}`).join("\n"),
     );
   }
 

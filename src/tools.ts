@@ -43,6 +43,7 @@ import { linesComponent } from "./tui.ts";
 import { humanBytes } from "./sizes.ts";
 import type { CrawlStats } from "./stats.ts";
 import { activeRun, collectionFor, ensureStore, prepareRun, type Store } from "./store.ts";
+import { untrusted, UNTRUSTED_NOTE } from "./untrusted.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const RUN_SH = path.join(HERE, "..", "scripts", "run.sh");
@@ -63,6 +64,9 @@ function exitDescription(e: { code: number | null; signal: NodeJS.Signals | null
  * Accept "sulnews", "sulnews.yaml" or "sulnews.yml" alike, and tolerate a
  * leading "@" in case the completion trigger comes along for the ride.
  */
+/** A page can return an arbitrarily large value; this is plenty to judge one by. */
+const EVAL_VALUE_MAX = 2_000;
+
 export function normalizeName(raw: string): string {
   return raw.trim().replace(/^@/, "").replace(/\.ya?ml$/, "");
 }
@@ -880,10 +884,17 @@ export function createTools(
 
       const r = await browser.eval(String(params.js));
       const parts: string[] = [];
-      if (r.ok) parts.push(`=> ${JSON.stringify(r.value) ?? "undefined"}`);
-      else parts.push(`threw: ${r.error ?? "unknown error"}`);
-      if (r.console.length) parts.push(`console:\n${r.console.map((l) => `  ${l}`).join("\n")}`);
-      if (r.url) parts.push(`page: ${r.url}`);
+      // The value has to arrive intact — inspecting it is the point of the
+      // tool — so it is capped rather than reshaped. Everything around it is
+      // page-controlled too, and gets the usual marking.
+      if (r.ok) {
+        const shown = JSON.stringify(r.value) ?? "undefined";
+        parts.push(`=> ${shown.length > EVAL_VALUE_MAX ? `${shown.slice(0, EVAL_VALUE_MAX - 1)}…` : shown}`);
+      } else parts.push(`threw: ${untrusted(r.error, "unknown error")}`);
+      if (r.console.length) {
+        parts.push(`console (${UNTRUSTED_NOTE}):\n${r.console.map((l) => `  ${untrusted(l)}`).join("\n")}`);
+      }
+      if (r.url) parts.push(`page: ${untrusted(r.url)}`);
       return { content: [{ type: "text", text: parts.join("\n") }], details: r };
     },
   });

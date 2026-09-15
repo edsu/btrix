@@ -83,7 +83,7 @@ describe("btrix_eval guards", () => {
       .execute("id", { js: "document.querySelector('.load-more').click()" }, undefined, undefined, {} as any);
 
     const out = said(result);
-    expect(out).toContain("threw: TypeError");
+    expect(out).toContain("threw: ‹TypeError");
     expect(out).toContain("[behaviour] trying .load-more");
     expect(result.details.ok).toBe(false);
   });
@@ -99,7 +99,7 @@ describe("btrix_eval guards", () => {
     );
     expect(out).toContain("=> 42");
     expect(out).toContain("[behaviour] found 42");
-    expect(out).toContain("page: https://x.test/");
+    expect(out).toContain("page: ‹https://x.test/›");
   });
 });
 
