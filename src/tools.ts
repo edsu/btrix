@@ -195,11 +195,12 @@ export function createTools(
       const store = getStore();
       const config = normalizeName(String(params.config));
 
-      const engine = await engineStatus();
-      if (!engine.usable) return text(engine.problem ?? "No container engine available.");
-
       ensureStore(store);
 
+      // Before the engine check, deliberately. A name that matches no config
+      // is answerable without a container engine, and "no docker" is a
+      // useless reply to a typo -- it sends someone to fix their Docker
+      // install when what they needed was the list of configs they have.
       const file = configPath(store, config);
       if (!file) {
         const available = listConfigs(store);
@@ -208,6 +209,9 @@ export function createTools(
             (available.length ? ` Available configs: ${available.join(", ")}` : " There are no configs yet."),
         );
       }
+
+      const engine = await engineStatus();
+      if (!engine.usable) return text(engine.problem ?? "No container engine available.");
 
       // The collection directory is named by the config's `collection:` key,
       // which need not match the config's filename.

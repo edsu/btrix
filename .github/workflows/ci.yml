@@ -79,6 +79,14 @@ jobs:
         run: |
           set -euo pipefail
           tarball="$(npm pack --silent)"
-          tar tzf "$tarball" | grep -q 'package/vendor/replaywebpage/ui.js'
-          tar tzf "$tarball" | grep -q 'package/vendor/replaywebpage/replay/sw.js'
-          tar tzf "$tarball" | grep -q 'package/vendor/replaywebpage/LICENSE'
+          # Listed once into a variable rather than piped into `grep -q`:
+          # grep exits on the first match, GNU tar then fails writing to a
+          # closed pipe, and pipefail turns that into a failed step.
+          listing="$(tar tzf "$tarball")"
+          for f in \
+            package/vendor/replaywebpage/ui.js \
+            package/vendor/replaywebpage/replay/sw.js \
+            package/vendor/replaywebpage/LICENSE
+          do
+            echo "$listing" | grep -qx "$f" || { echo "missing from tarball: $f" >&2; exit 1; }
+          done

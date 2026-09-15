@@ -37,7 +37,12 @@ afterEach(() => {
 });
 
 describe("btrix_run guards", () => {
-  it("says there are no configs rather than starting anything", async () => {
+  // These answer without a container engine, and that is the point rather
+  // than an accident: CI has no usable docker or podman, and until the
+  // config check moved ahead of the engine check both of these got told
+  // "No docker or podman found" instead. A typo'd config name is not a
+  // Docker problem, and saying so sends people to fix the wrong thing.
+  it("names a missing config without needing a container engine", async () => {
     const out = said(await run(tool("btrix_run"), { config: "nope" }));
     expect(out).toContain("No nope.yaml");
     expect(out).toContain("no configs yet");
@@ -49,6 +54,8 @@ describe("btrix_run guards", () => {
     const out = said(await run(tool("btrix_run"), { config: "typo" }));
     expect(out).toContain("cultprotest");
     expect(out).toContain("sulnews");
+    // Whatever the engine's state, this answer does not mention it.
+    expect(out).not.toMatch(/docker|podman/i);
   });
 });
 
