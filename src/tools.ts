@@ -449,7 +449,7 @@ export function createTools(
 
       const notes = [
         "Chrome 141+ and Edge require the Local Network Access permission for a page on replayweb.page to reach " +
-          "localhost: the user must click Allow on the first load, or replay fails with " +
+          "127.0.0.1: the user must click Allow on the first load, or replay fails with " +
           '"An unexpected error occured: TypeError: Failed to fetch", which looks like a corrupt archive but is not. ' +
           "Dragging the .wacz onto replayweb.page avoids the permission entirely.",
       ];
@@ -680,7 +680,7 @@ export function createTools(
           ? `A browser is running for ${url.host}. Hand these steps to the user:`
           : `The profile browser is starting for ${url.host} (it may still be pulling the image). Hand these steps to the user:`,
         "",
-        "  1. Open http://localhost:6080 in your browser.",
+        "  1. Open http://127.0.0.1:6080 in your browser.",
         "  2. Log in to the site yourself, in that window. Complete any two-factor step.",
         "  3. Use the on-screen control to save the profile.",
         "",

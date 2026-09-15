@@ -11,6 +11,9 @@
 # or forwards credentials, and profiles/*.tar.gz hold session cookies, so they
 # are kept out of version control by the store's own .gitignore.
 #
+# Reach it at http://127.0.0.1:6080, not http://localhost:6080 -- the publish
+# below is IPv4-only, and localhost resolves to ::1 first on macOS.
+#
 # Both ports are published on 127.0.0.1 rather than 0.0.0.0. A bare
 # `-p 6080:6080` would put this unauthenticated noVNC session -- the one a
 # password and 2FA code get typed into -- on every interface, so anyone on the

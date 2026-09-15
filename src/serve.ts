@@ -174,7 +174,12 @@ export async function serveDir(dir: string, preferredPort = 8087, attempts = 10)
   return {
     port,
     dir,
-    url: (file: string) => `${REPLAY_ORIGIN}/?source=http://localhost:${port}/${encodeURIComponent(file)}`,
+    // 127.0.0.1, not localhost. The listener above is IPv4-only, and on macOS
+    // `localhost` resolves to ::1 first -- so a browser that does not fall
+    // back to IPv4 reports a bare "NetworkError" and the archive looks broken
+    // when it is serving fine. Naming the address that was actually bound
+    // removes the guess.
+    url: (file: string) => `${REPLAY_ORIGIN}/?source=http://127.0.0.1:${port}/${encodeURIComponent(file)}`,
     close: () =>
       new Promise<void>((resolve) => {
         server.close(() => resolve());

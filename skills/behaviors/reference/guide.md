@@ -352,7 +352,7 @@ These answer two *different* questions:
   requests + CORS** using `btrix_view`, or `node <btrix>/src/serve.ts <dir> [port]`
   (ReplayWeb.page reads the ZIP index via `Range: bytes=-N` suffix requests, so
   the server must honor those), then load it via
-  `?source=http://localhost:PORT/foo.wacz`.
+  `?source=http://127.0.0.1:PORT/foo.wacz`.
 - **Full-text search:** ReplayWeb.page's page search (URL / title / text) only
   searches text stored in the page index, so crawl with `text: to-pages` — that
   writes each page's text into `pages.jsonl`. Text written `to-warc` lives in

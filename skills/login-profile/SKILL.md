@@ -22,7 +22,7 @@ btrix_profile https://example.org/login
 
 Then tell the user, in these words:
 
-1. Open <http://localhost:6080>.
+1. Open <http://127.0.0.1:6080>.
 2. Log in to the site in that window, completing any two-factor step.
 3. Use the on-screen control to save the profile.
 
@@ -45,7 +45,7 @@ the same regardless of where the store lives on disk.
 
 ## When the browser will not load
 
-- **Nothing at localhost:6080** — the image may still be pulling on a first
+- **Nothing at 127.0.0.1:6080** — the image may still be pulling on a first
   run; that is a 2.4GB download. Check again after a minute.
 - **Port already in use** — another profile browser, or something else, holds
   6080. `btrix_profile` refuses to start a second one; finish or stop the first.

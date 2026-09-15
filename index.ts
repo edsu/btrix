@@ -238,7 +238,7 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify("No crawl is running.", "info");
         return;
       }
-      await openUrl("http://localhost:9037/");
+      await openUrl("http://127.0.0.1:9037/");
     },
   });
 

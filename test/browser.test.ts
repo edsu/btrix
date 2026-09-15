@@ -39,7 +39,7 @@ describe("ScratchBrowser", () => {
   it("names its container per process, so two sessions do not collide", () => {
     expect(browser.container).toBe(`btrix-browser-${process.pid}`);
     expect(browser.isRunning()).toBe(false);
-    expect(browser.vncUrl()).toBe("http://localhost:6080/");
+    expect(browser.vncUrl()).toBe("http://127.0.0.1:6080/");
   });
 
   it("stopping when nothing runs is a no-op, not an error", async () => {

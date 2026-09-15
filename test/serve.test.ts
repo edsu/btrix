@@ -158,9 +158,18 @@ describe("serveDir", () => {
     expect((await get("example.wacz")).status).toBe(200);
   });
 
+  it("names 127.0.0.1 rather than localhost, which may resolve to ::1 first", () => {
+    // The server binds IPv4 loopback only. On a machine where localhost
+    // resolves to ::1 ahead of 127.0.0.1 -- the macOS default -- a browser
+    // that does not fall back reports a bare network error, and the archive
+    // looks broken when it is fine.
+    expect(server.url("example.wacz")).toContain("http://127.0.0.1:");
+    expect(server.url("example.wacz")).not.toContain("localhost");
+  });
+
   it("builds a replayweb.page url", () => {
     expect(server.url("example.wacz")).toBe(
-      `https://replayweb.page/?source=http://localhost:${server.port}/example.wacz`,
+      `https://replayweb.page/?source=http://127.0.0.1:${server.port}/example.wacz`,
     );
   });
 

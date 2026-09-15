@@ -78,7 +78,7 @@ export class ScratchBrowser {
   }
 
   vncUrl(): string {
-    return `http://localhost:${VNC_PORT}/`;
+    return `http://127.0.0.1:${VNC_PORT}/`;
   }
 
   private target(): CdpTarget | undefined {

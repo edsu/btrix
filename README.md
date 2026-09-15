@@ -123,7 +123,7 @@ version control while `config/` remains yours to commit.
 ## Credentials
 
 btrix never handles a password. For a site behind a login it opens a browser
-over noVNC at `localhost:6080`; you sign in there, and the resulting profile is
+over noVNC at `127.0.0.1:6080`; you sign in there, and the resulting profile is
 saved into the store. Profiles hold session cookies, so they are kept private,
 ignored by git, and mounted read-only into a crawl. Sessions expire — if a
 logged-in crawl comes back full of login pages, make the profile again.
@@ -206,7 +206,7 @@ and check it with a small crawl.
 
 By default this is a local Chrome in a window on your desktop, so F12 gives you
 real DevTools. Ask for the crawler's own browser instead — watched over noVNC
-at `localhost:6080` — when a selector works locally but the crawl still misses
+at `127.0.0.1:6080` — when a selector works locally but the crawl still misses
 pages. Both use a throwaway profile with nothing signed in; neither is the
 browser you browse with, which Chrome would refuse to expose anyway.
 

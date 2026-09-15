@@ -132,7 +132,7 @@ per click. `console.log` from evaluated code comes back too, which is the same
 channel a behavior reports on.
 
 `btrix_browser use=crawler` opens the container's browser instead, watched over
-noVNC at <http://localhost:6080>. That one *is* the browser the crawler runs —
+noVNC at <http://127.0.0.1:6080>. That one *is* the browser the crawler runs —
 same build, same flags — so it is what to reach for when a selector works
 locally and the crawl still misses pages.
 
@@ -153,7 +153,7 @@ Three things to know:
   for loading a large local `.wacz` into ReplayWeb.page:
   Use `btrix_view` for an archive in the store. For a WACZ anywhere else, run
   `node <btrix>/src/serve.ts <dir> [port]` then open
-  `https://replayweb.page/?source=http://localhost:<port>/<file>.wacz`.
+  `https://replayweb.page/?source=http://127.0.0.1:<port>/<file>.wacz`.
 - [`reference/guide.md`](reference/guide.md) — the full guide + debugging playbook.
 - [`reference/crawler-options.md`](reference/crawler-options.md) — every `crawl`
   option grouped by purpose (scope, behaviors, timing, rate limiting, …), with
