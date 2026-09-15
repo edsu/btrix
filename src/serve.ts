@@ -353,9 +353,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   for (const a of archives) process.stdout.write(`\n  ${server.url(a)}\n`);
   if (!archives.length) process.stdout.write("\n(no .wacz files in that directory)\n");
   process.stdout.write(
-    "\nIf the browser says \"Failed to fetch\", the archive is fine — some browsers and " +
-      "extensions block a page on replayweb.page from reaching 127.0.0.1. Drag the .wacz " +
-      "onto https://replayweb.page instead; it reads from disk and always works.\n",
+    bundleAvailable()
+      ? "\nThe viewer is served from this origin too, so nothing is fetched from the network.\n"
+      : "\nNo viewer bundle here, so the links above go to replayweb.page — which means a public " +
+          "page fetching 127.0.0.1, and some browsers and extensions refuse that. Run " +
+          "scripts/vendor-replay.sh to serve the viewer locally, or drag the .wacz onto " +
+          "https://replayweb.page, which reads from disk and always works.\n",
   );
 }
 

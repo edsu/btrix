@@ -38,7 +38,7 @@ import {
   reviewForModel,
 } from "./render.ts";
 import type { ScratchBrowser } from "./browser.ts";
-import type { ReplayServers } from "./serve.ts";
+import { bundleAvailable, type ReplayServers } from "./serve.ts";
 import { linesComponent } from "./tui.ts";
 import { humanBytes } from "./sizes.ts";
 import type { CrawlStats } from "./stats.ts";
@@ -398,7 +398,7 @@ export function createTools(
       if (options.expanded) {
         lines.push(...result.content.map((c: any) => theme.fg("dim", String(c.text ?? ""))));
       } else {
-        lines.push(theme.fg("dim", "\"Failed to fetch\" here means the browser blocked it, not a bad archive"));
+        lines.push(theme.fg("dim", "viewer and archive are both served locally — nothing leaves this machine"));
       }
       return linesComponent(lines);
     },
@@ -447,19 +447,23 @@ export function createTools(
       const file = path.basename(archive.path);
       const config = inv.configs.find((c) => c.collection === archive.collection);
 
-      const notes = [
-        // Observed 2026-09-15: the same archive and the same server replayed in
-        // a clean Firefox and failed in Chrome 153 and in Zen, so this is the
-        // browser refusing the request, not a bad capture. Do not promise a
-        // permission prompt -- none was offered in either failing browser.
-        "If replay shows \"An unexpected error occured: TypeError: Failed to fetch\", the archive is fine — the " +
-          "browser blocked the page on replayweb.page from fetching 127.0.0.1. It is worth saying that plainly, " +
-          "because it reads like a corrupt capture. Three things that get around it, cheapest first: drag the " +
-          ".wacz file onto replayweb.page, which reads from disk and needs no local request at all; try another " +
-          "browser; or check for an extension blocking LAN access (uBlock Origin ships a \"Block Outsider " +
-          "Intrusion into LAN\" list) and for Chrome's Local Network Access permission on the site. The file is at " +
-          `${archive.path}.`,
-      ];
+      const notes: string[] = [];
+
+      // With the viewer served from the same origin there is no permission to
+      // grant and no cross-origin fetch to refuse, so there is nothing to warn
+      // about. Without it the link goes to replayweb.page, which is the case
+      // that fails: on 2026-09-15 the same archive failed in Chrome 153 and in
+      // Zen that way and replayed in both from the loopback origin. No prompt
+      // was offered in either, so do not tell anyone to click Allow.
+      if (!bundleAvailable()) {
+        notes.push(
+          "The replay viewer is not vendored in, so this link goes to replayweb.page — a public page fetching " +
+            "127.0.0.1, which some browsers and LAN-blocking extensions refuse with \"An unexpected error " +
+            "occured: TypeError: Failed to fetch\". That reads like a corrupt capture and is not one. Run " +
+            "scripts/vendor-replay.sh to serve the viewer locally, or drag " +
+            `${archive.path} onto replayweb.page, which reads from disk and always works.`,
+        );
+      }
       // Page search only works if the crawl wrote page text.
       if (config && !config.textToPages) {
         notes.push(`${archive.collection} was crawled without "text: to-pages", so it replays but is not full-text searchable.`);

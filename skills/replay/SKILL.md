@@ -1,19 +1,48 @@
 ---
 name: replay
-description: Diagnose ReplayWeb.page replay problems for a btrix archive — "Failed to fetch" when opening a replay link, archived pages showing live content instead, page search finding nothing, or a WACZ that looks corrupt. Use when replay does not work, not to start a replay server (btrix_view does that).
+description: Diagnose replay problems for a btrix archive — "Service worker not found", archived pages showing live content instead, page search finding nothing, "Failed to fetch" on an older replayweb.page link, or a WACZ that looks corrupt. Use when replay does not work, not to start a replay server (btrix_view does that).
 ---
 
 # Replaying a WACZ
 
-`btrix_view` serves the archive and returns a `replayweb.page` URL. When replay
-misbehaves, the archive is usually fine and one of these is the cause. Check
-them in this order.
+`btrix_view` serves the archive *and* the viewer from one loopback origin, and
+returns a URL like `http://127.0.0.1:8087/?source=name.wacz`. Nothing is
+fetched from the network, so there is no permission to grant and no
+cross-origin request to be refused.
+
+When replay misbehaves the archive is usually fine. Check these in order.
+
+## "ReplayWeb.page could not be loaded … Service worker not found"
+
+The vendored viewer is missing or incomplete. It lives in `vendor/replaywebpage/`
+and `sw.js` has to be at `vendor/replaywebpage/replay/sw.js` — the element asks
+for `./replay/sw.js`, and the worker's scope has to cover where archived pages
+are served from. Beside `ui.js` it is simply not found.
+
+Fix it by re-vendoring:
+
+```sh
+scripts/vendor-replay.sh
+```
+
+If the bundle is absent altogether, `btrix_view` falls back to a
+`replayweb.page` URL — which still works in some browsers, and is the case the
+next section covers.
 
 ## "An unexpected error occured: TypeError: Failed to fetch"
+
+Only happens on a `replayweb.page` URL: an older link, or the fallback above.
+Self-hosted replay does not hit this at all, so the first thing to check is
+whether the URL points at `127.0.0.1` or at `replayweb.page`.
 
 The browser refused to let the page on `replayweb.page` fetch `127.0.0.1`.
 The archive is almost certainly fine, and saying so first matters — the
 message reads like a corrupt capture.
+
+**The real fix is to use a current `btrix_view` URL**, which serves the viewer
+from the same origin and sidesteps this entirely. Observed 2026-09-15: the same
+archive failed in Chrome 153 and Zen through `replayweb.page` and replayed in
+both from the loopback origin.
 
 **Say the archive is healthy before troubleshooting.** To show it rather than
 assert it, ask the archive for a byte range. A `206 Partial Content` while the

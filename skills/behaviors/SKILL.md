@@ -149,11 +149,11 @@ Three things to know:
   main frame. A behavior for an embedded player or comment system cannot be
   worked out this way.
 
-- **Serving a WACZ for replay** — a Range + CORS static server
-  for loading a large local `.wacz` into ReplayWeb.page:
+- **Serving a WACZ for replay** — a Range server that also hosts the viewer,
+  so replay is same-origin and needs no network:
   Use `btrix_view` for an archive in the store. For a WACZ anywhere else, run
   `node <btrix>/src/serve.ts <dir> [port]` then open
-  `https://replayweb.page/?source=http://127.0.0.1:<port>/<file>.wacz`.
+  `http://127.0.0.1:<port>/?source=<file>.wacz`.
 - [`reference/guide.md`](reference/guide.md) — the full guide + debugging playbook.
 - [`reference/crawler-options.md`](reference/crawler-options.md) — every `crawl`
   option grouped by purpose (scope, behaviors, timing, rate limiting, …), with
