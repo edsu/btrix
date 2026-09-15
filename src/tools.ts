@@ -384,8 +384,9 @@ export function createTools(
     name: "btrix_view",
     label: "Replay",
     description:
-      "Serve a finished archive locally and return a ReplayWeb.page URL for it. The server keeps running until " +
-      "the session ends. Relay the Chrome local-network caveat in the result to the user before they open the link.",
+      "Serve a finished archive locally and return a URL that replays it. The viewer is served from the same " +
+      "origin as the archive, so nothing is fetched from the network. The server keeps running until the " +
+      "session ends. Relay any notes in the result; when there are none, there is nothing to warn about.",
     promptSnippet: "Replay a finished crawl in ReplayWeb.page",
     parameters: Type.Object({
       name: Type.Optional(Type.String({ description: "Collection or config name. Defaults to the only archive." })),
@@ -394,11 +395,14 @@ export function createTools(
       const d = result.details as { url?: string; port?: number } | undefined;
       if (!d?.url) return linesComponent(result.content.map((c: any) => String(c.text ?? "")));
       const lines = [theme.fg("mdLink", d.url), theme.fg("dim", `served on port ${d.port}`)];
-      // The troubleshooting is long; keep it for the expanded view.
+      // Gated the same way execute() is. Without this the collapsed line said
+      // nothing leaves the machine directly underneath a replayweb.page link.
       if (options.expanded) {
         lines.push(...result.content.map((c: any) => theme.fg("dim", String(c.text ?? ""))));
-      } else {
+      } else if (bundleAvailable()) {
         lines.push(theme.fg("dim", "viewer and archive are both served locally — nothing leaves this machine"));
+      } else {
+        lines.push(theme.fg("warning", "no local viewer — this link goes to replayweb.page; expand for why"));
       }
       return linesComponent(lines);
     },

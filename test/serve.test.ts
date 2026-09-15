@@ -8,7 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { REPLAY_ORIGIN, bundleAvailable, parseRange, replayPage, serveDir, type ReplayServer } from "../src/serve.ts";
+import { REPLAY_ORIGIN, bundleAvailable, parseRange, replayPage, serveDir, setBundleDir, type ReplayServer } from "../src/serve.ts";
 
 describe("parseRange", () => {
   it("handles a closed range", () => {
@@ -313,5 +313,79 @@ describe("shutdown", () => {
     await s.close();
     expect(Date.now() - started).toBeLessThan(1_000);
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("without the vendored viewer", () => {
+  // This whole branch was unreachable from a test, and a bug lived in it: the
+  // collapsed btrix_view line claimed nothing left the machine, printed under
+  // a replayweb.page link. A seam is the difference between catching that and
+  // shipping it.
+  let dir: string;
+  let server: ReplayServer;
+  let restore: string;
+
+  beforeEach(async () => {
+    restore = setBundleDir(path.join(os.tmpdir(), "btrix-no-such-bundle"));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "btrix-nobundle-"));
+    fs.writeFileSync(path.join(dir, "example.wacz"), Buffer.alloc(100));
+    server = await serveDir(dir, 0);
+  });
+
+  afterEach(async () => {
+    await server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+    setBundleDir(restore);
+  });
+
+  it("reports the bundle as unavailable", () => {
+    expect(bundleAvailable()).toBe(false);
+  });
+
+  it("falls back to a replayweb.page url, so a checkout without it still replays", () => {
+    expect(server.url("example.wacz")).toBe(
+      `https://replayweb.page/?source=http://127.0.0.1:${server.port}/example.wacz`,
+    );
+  });
+
+  it("says how to fix it rather than 404ing blankly", async () => {
+    const res = await fetch(`http://127.0.0.1:${server.port}/ui.js`);
+    expect(res.status).toBe(404);
+    expect(await res.text()).toContain("vendor-replay.sh");
+  });
+
+  it("still serves archives", async () => {
+    const res = await fetch(`http://127.0.0.1:${server.port}/example.wacz`);
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("the bundle is read once and revalidated", () => {
+  // ~2MB of immutable files; a synchronous re-read per request blocks the
+  // same server the browser is range-requesting the archive from.
+  let dir: string;
+  let server: ReplayServer;
+
+  beforeEach(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "btrix-etag-"));
+    fs.writeFileSync(path.join(dir, "example.wacz"), Buffer.alloc(100));
+    server = await serveDir(dir, 0);
+  });
+  afterEach(async () => {
+    await server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("offers an etag and honours it", async () => {
+    const first = await fetch(`http://127.0.0.1:${server.port}/ui.js`);
+    expect(first.status).toBe(200);
+    const etag = first.headers.get("etag");
+    expect(etag).toBeTruthy();
+
+    const second = await fetch(`http://127.0.0.1:${server.port}/ui.js`, {
+      headers: { "If-None-Match": etag! },
+    });
+    expect(second.status).toBe(304);
+    expect(await second.text()).toBe("");
   });
 });

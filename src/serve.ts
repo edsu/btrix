@@ -92,18 +92,51 @@ function contentType(file: string): string {
  * handler deliberately resolves by basename so it cannot be walked out of,
  * and adding a servable tree would undo that.
  */
-const BUNDLE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "vendor", "replaywebpage");
+const DEFAULT_BUNDLE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "vendor", "replaywebpage");
 
-const BUNDLE_ROUTES: Record<string, string> = {
-  "/ui.js": path.join(BUNDLE_DIR, "ui.js"),
-  // Must be under replay/: the element requests ./replay/sw.js, the default
-  // replayBase, and the worker's scope has to cover where pages are served.
-  "/replay/sw.js": path.join(BUNDLE_DIR, "replay", "sw.js"),
-};
+/**
+ * Overridable so the no-bundle path can be tested. It was not, and the cost
+ * showed up immediately: the fallback branch held a line claiming nothing
+ * left the machine directly beneath a replayweb.page link, and no test could
+ * reach it to notice.
+ */
+let bundleDir = process.env.BTRIX_REPLAY_BUNDLE_DIR?.trim() || DEFAULT_BUNDLE_DIR;
+
+/** For tests. Returns the previous value so a caller can put it back. */
+export function setBundleDir(dir: string): string {
+  const was = bundleDir;
+  bundleDir = dir;
+  cached.clear();
+  return was;
+}
+
+function bundleRoutes(): Record<string, string> {
+  return {
+    "/ui.js": path.join(bundleDir, "ui.js"),
+    // Must be under replay/: the element requests ./replay/sw.js, the default
+    // replayBase, and the worker's scope has to cover where pages are served.
+    "/replay/sw.js": path.join(bundleDir, "replay", "sw.js"),
+  };
+}
 
 /** Whether the vendored bundle is present, so callers can fall back. */
 export function bundleAvailable(): boolean {
-  return Object.values(BUNDLE_ROUTES).every((f) => fs.existsSync(f));
+  return Object.values(bundleRoutes()).every((f) => fs.existsSync(f));
+}
+
+/**
+ * Read once rather than per request. These are ~2MB of immutable vendored
+ * files, and a synchronous re-read on every page load blocks the same
+ * single-threaded server the browser is range-requesting the archive from.
+ */
+const cached = new Map<string, Buffer>();
+
+function bundleFile(file: string): Buffer {
+  const hit = cached.get(file);
+  if (hit) return hit;
+  const body = fs.readFileSync(file);
+  cached.set(file, body);
+  return body;
 }
 
 /**
@@ -199,20 +232,30 @@ export async function serveDir(dir: string, preferredPort = 8087, attempts = 10)
     }
 
     // The vendored viewer, from a fixed list rather than a walkable tree.
-    const bundled = BUNDLE_ROUTES[route];
+    const bundled = bundleRoutes()[route];
     if (bundled) {
       let body: Buffer;
       try {
-        body = fs.readFileSync(bundled);
+        body = bundleFile(bundled);
       } catch {
         res.writeHead(404, CORS);
         res.end("replay bundle missing — run scripts/vendor-replay.sh");
+        return;
+      }
+      // Vendored and immutable, so a strong validator is honest and saves
+      // re-sending two megabytes on every reload.
+      const etag = `"${body.length.toString(16)}-${bundled.length.toString(16)}"`;
+      if (req.headers["if-none-match"] === etag) {
+        res.writeHead(304, { ...CORS, ETag: etag });
+        res.end();
         return;
       }
       res.writeHead(200, {
         ...CORS,
         "Content-Type": contentType(bundled),
         "Content-Length": body.length,
+        ETag: etag,
+        "Cache-Control": "no-cache",
         // The worker's scope has to cover /replay/, which is where it serves
         // archived pages from.
         ...(route === "/replay/sw.js" ? { "Service-Worker-Allowed": "/" } : {}),
