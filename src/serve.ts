@@ -119,6 +119,22 @@ function bundleRoutes(): Record<string, string> {
   };
 }
 
+/**
+ * How to get the bundle back, as an absolute path.
+ *
+ * "Run scripts/vendor-replay.sh" is no use to someone who installed globally:
+ * from their own directory there is no such file. Re-vendoring into a global
+ * node_modules also gets overwritten on the next upgrade, so reinstalling is
+ * the better answer there -- the message offers both and lets the path make
+ * clear which situation they are in.
+ */
+export function vendorHint(): string {
+  const script = path.join(bundleDir, "..", "..", "scripts", "vendor-replay.sh");
+  return bundleDir.includes(`${path.sep}node_modules${path.sep}`)
+    ? `reinstall btrix (npm i -g @edsu/btrix), or run ${script}`
+    : `run ${script}`;
+}
+
 /** Whether the vendored bundle is present, so callers can fall back. */
 export function bundleAvailable(): boolean {
   return Object.values(bundleRoutes()).every((f) => fs.existsSync(f));
@@ -176,6 +192,12 @@ export function replayPage(source: string): string {
     <style>html,body{margin:0;height:100%}replay-web-page{display:block;height:100vh}</style>
   </head>
   <body>
+    <!-- swName is also the element's own default; kept explicit because the
+         bundle has null and page-param branches for it, and a silent change
+         upstream would surface as "Service worker not found". The constraint
+         that actually matters is on the server: the worker is served at
+         /replay/sw.js, because the element resolves swName against its
+         replaybase of "./replay/". -->
     <replay-web-page source="${safe}" swName="sw.js"></replay-web-page>
   </body>
 </html>
@@ -216,12 +238,34 @@ export async function serveDir(dir: string, preferredPort = 8087, attempts = 10)
     // else: it ends up in the DOM, so it is matched against the directory
     // rather than escaped and hoped for.
     if (route === "/" || route === "/index.html") {
-      const wanted = query.get("source") ?? "";
+      const wanted = query.get("source");
       const available = listArchiveFiles(dir);
-      const source = available.includes(path.basename(wanted)) ? path.basename(wanted) : available[0];
-      if (!source) {
+
+      if (!available.length) {
         res.writeHead(404, { ...CORS, "Content-Type": contentType(".html") });
         res.end("<!doctype html><p>No .wacz in this directory.");
+        return;
+      }
+
+      // A `source` that names nothing is an error, not an invitation to pick
+      // something else. Substituting the first archive replayed a different
+      // capture under the requested name's absence -- a deleted or renamed
+      // file, or a stale bookmark, loaded successfully showing the wrong
+      // thing, and someone would draw conclusions from it. Only a request
+      // with no `source` at all gets a default.
+      let source: string;
+      if (wanted === null || wanted === "") {
+        source = available[0]!;
+      } else if (available.includes(path.basename(wanted))) {
+        source = path.basename(wanted);
+      } else {
+        res.writeHead(404, { ...CORS, "Content-Type": contentType(".html") });
+        res.end(
+          `<!doctype html><meta charset="utf-8"><p>No <code>${escapeHtml(path.basename(wanted))}</code> here.` +
+            `<p>This directory has:<ul>${available
+              .map((f) => `<li><a href="/?source=${encodeURIComponent(f)}">${escapeHtml(f)}</a>`)
+              .join("")}</ul>`,
+        );
         return;
       }
       const body = Buffer.from(replayPage(source), "utf8");
@@ -239,7 +283,7 @@ export async function serveDir(dir: string, preferredPort = 8087, attempts = 10)
         body = bundleFile(bundled);
       } catch {
         res.writeHead(404, CORS);
-        res.end("replay bundle missing — run scripts/vendor-replay.sh");
+        res.end(`replay bundle missing — ${vendorHint()}`);
         return;
       }
       // Vendored and immutable, so a strong validator is honest and saves
@@ -258,6 +302,17 @@ export async function serveDir(dir: string, preferredPort = 8087, attempts = 10)
         "Cache-Control": "no-cache",
         // The worker's scope has to cover /replay/, which is where it serves
         // archived pages from.
+        // Required: ui.js registers with scope "./" from a page at /, so the
+        // worker claims the whole origin, and without this header the browser
+        // refuses a worker served from /replay/ that asks for /.
+        //
+        // The consequence worth knowing: wabac's fetch handler is then
+        // interposed on everything on this origin, including the browser's own
+        // range requests for the .wacz. And ReplayServers reuses one port per
+        // directory, so an activated worker outlives a btrix session and is
+        // shared by every archive served from that port. Replaying one archive
+        // and then another on the same port is covered by a test for exactly
+        // that reason.
         ...(route === "/replay/sw.js" ? { "Service-Worker-Allowed": "/" } : {}),
       });
       if (req.method === "HEAD") return res.end();
@@ -419,9 +474,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     bundleAvailable()
       ? "\nThe viewer is served from this origin too, so nothing is fetched from the network.\n"
       : "\nNo viewer bundle here, so the links above go to replayweb.page — which means a public " +
-          "page fetching 127.0.0.1, and some browsers and extensions refuse that. Run " +
-          "scripts/vendor-replay.sh to serve the viewer locally, or drag the .wacz onto " +
-          "https://replayweb.page, which reads from disk and always works.\n",
+          `page fetching 127.0.0.1, and some browsers and extensions refuse that. To serve the ` +
+          `viewer locally, ${vendorHint()}. Or drag the .wacz onto https://replayweb.page, which ` +
+          "reads from disk and always works.\n",
   );
 }
 

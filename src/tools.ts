@@ -38,7 +38,7 @@ import {
   reviewForModel,
 } from "./render.ts";
 import type { ScratchBrowser } from "./browser.ts";
-import { bundleAvailable, type ReplayServers } from "./serve.ts";
+import { bundleAvailable, vendorHint, type ReplayServers } from "./serve.ts";
 import { linesComponent } from "./tui.ts";
 import { humanBytes } from "./sizes.ts";
 import type { CrawlStats } from "./stats.ts";
@@ -463,9 +463,9 @@ export function createTools(
         notes.push(
           "The replay viewer is not vendored in, so this link goes to replayweb.page — a public page fetching " +
             "127.0.0.1, which some browsers and LAN-blocking extensions refuse with \"An unexpected error " +
-            "occured: TypeError: Failed to fetch\". That reads like a corrupt capture and is not one. Run " +
-            "scripts/vendor-replay.sh to serve the viewer locally, or drag " +
-            `${archive.path} onto replayweb.page, which reads from disk and always works.`,
+            "occured: TypeError: Failed to fetch\". That reads like a corrupt capture and is not one. To " +
+            `serve the viewer locally, ${vendorHint()}. Or drag ${archive.path} onto replayweb.page, ` +
+            "which reads from disk and always works.",
         );
       }
       // Page search only works if the crawl wrote page text.

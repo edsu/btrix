@@ -3,9 +3,17 @@
   "version": "2.5.3",
   "license": "AGPL-3.0-or-later",
   "source": "https://www.npmjs.com/package/replaywebpage/v/2.5.3",
+  "sourceRepository": "https://github.com/webrecorder/replayweb.page",
   "vendoredBy": "scripts/vendor-replay.sh",
+  "verifyWith": "scripts/vendor-replay.sh --verify",
   "files": {
-    "ui.js": "sha256-ad95b260fa467a6c4799e669ad76ac8e7d5abefa71d1a2970ae6b63dc454a3c3",
-    "replay/sw.js": "sha256-29a833e871e2f9b7f135f5b86bba0476b69ad975c129c2473ff5055f73f5a2d0"
+    "ui.js": {
+      "algorithm": "SHA256",
+      "checksumValue": "ad95b260fa467a6c4799e669ad76ac8e7d5abefa71d1a2970ae6b63dc454a3c3"
+    },
+    "replay/sw.js": {
+      "algorithm": "SHA256",
+      "checksumValue": "29a833e871e2f9b7f135f5b86bba0476b69ad975c129c2473ff5055f73f5a2d0"
+    }
   }
 }

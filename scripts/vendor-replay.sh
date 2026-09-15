@@ -1,5 +1,6 @@
 #!/bin/bash
 # usage: vendor-replay.sh [version]
+#        vendor-replay.sh --verify
 #
 # Vendors the two files btrix needs to replay an archive without sending the
 # browser to replayweb.page: the ReplayWeb.page app bundle and its service
@@ -16,18 +17,68 @@
 
 set -euo pipefail
 
-version="${1:-2.5.3}"
 here="$(cd "$(dirname "$0")/.." && pwd)"
 out="$here/vendor/replaywebpage"
+
+# Digests are recorded in SPDX/CycloneDX shape -- algorithm named, body lower
+# hex -- because that is what a bill of materials consumes. Not `sha256-<hex>`,
+# which wears the SRI prefix over an SBOM body: SRI wants base64, so anyone
+# pasting one into an integrity attribute got a silent failure.
+digest() { shasum -a 256 "$1" | cut -d" " -f1; }
+
+# Re-hash what is on disk against what was recorded. Without this the digests
+# are decorative: the script hashes the files it just copied, so provenance.json
+# agrees with vendor/ by construction -- including after a bad copy, a hand
+# edit, or a compromised download.
+if [ "${1:-}" = "--verify" ]; then
+  manifest="$out/provenance.json"
+  [ -f "$manifest" ] || { echo "no $manifest" >&2; exit 1; }
+  status=0
+  while IFS=$'\t' read -r rel want; do
+    [ -n "$rel" ] || continue
+    if [ ! -f "$out/$rel" ]; then
+      echo "MISSING  $rel" >&2; status=1; continue
+    fi
+    got="$(digest "$out/$rel")"
+    if [ "$got" = "$want" ]; then
+      echo "ok       $rel"
+    else
+      echo "CHANGED  $rel" >&2
+      echo "  recorded $want" >&2
+      echo "  on disk  $got" >&2
+      status=1
+    fi
+  done < <(python3 -c '
+import json, sys
+m = json.load(open(sys.argv[1]))
+for rel, meta in m["files"].items():
+    print(rel + "\t" + meta["checksumValue"])
+' "$manifest")
+  exit "$status"
+fi
+
+version="${1:-2.5.3}"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 echo "fetching replaywebpage@$version"
-(cd "$work" && npm pack "replaywebpage@$version" >/dev/null)
-tarball="$(echo "$work"/replaywebpage-*.tgz)"
-tar xzf "$tarball" -C "$work"
+(cd "$work" && npm pack "replaywebpage@$version")
 
+# Globbed into an array and counted, not through `echo`: zero matches would
+# have left the literal pattern as the filename and two -- a leftover from an
+# interrupted run -- would have left both, either way failing later at `tar`
+# with a confusing message instead of naming the real problem.
+tarballs=("$work"/replaywebpage-*.tgz)
+if [ "${#tarballs[@]}" -ne 1 ] || [ ! -f "${tarballs[0]}" ]; then
+  echo "expected exactly one tarball in $work, found ${#tarballs[@]}" >&2
+  exit 1
+fi
+tar xzf "${tarballs[0]}" -C "$work"
+
+# Cleared first, so an upstream rename cannot leave the previous version's
+# files behind in vendor/ -- still served, and still hashed as if current.
+rm -rf "$out"
 mkdir -p "$out/replay"
 cp "$work/package/ui.js" "$out/ui.js"
 # sw.js has to sit under replay/: the element asks for ./replay/sw.js, which is
@@ -43,10 +94,18 @@ cp "$work/package/LICENSE" "$out/LICENSE"
   echo "  \"version\": \"$version\","
   echo "  \"license\": \"AGPL-3.0-or-later\","
   echo "  \"source\": \"https://www.npmjs.com/package/replaywebpage/v/$version\","
+  echo "  \"sourceRepository\": \"https://github.com/webrecorder/replayweb.page\","
   echo "  \"vendoredBy\": \"scripts/vendor-replay.sh\","
+  echo "  \"verifyWith\": \"scripts/vendor-replay.sh --verify\","
   echo "  \"files\": {"
-  echo "    \"ui.js\": \"sha256-$(shasum -a 256 "$out/ui.js" | cut -d' ' -f1)\","
-  echo "    \"replay/sw.js\": \"sha256-$(shasum -a 256 "$out/replay/sw.js" | cut -d' ' -f1)\""
+  echo "    \"ui.js\": {"
+  echo "      \"algorithm\": \"SHA256\","
+  echo "      \"checksumValue\": \"$(digest "$out/ui.js")\""
+  echo "    },"
+  echo "    \"replay/sw.js\": {"
+  echo "      \"algorithm\": \"SHA256\","
+  echo "      \"checksumValue\": \"$(digest "$out/replay/sw.js")\""
+  echo "    }"
   echo "  }"
   echo "}"
 } > "$out/provenance.json"

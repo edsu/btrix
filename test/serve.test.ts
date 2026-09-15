@@ -8,7 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { REPLAY_ORIGIN, bundleAvailable, parseRange, replayPage, serveDir, setBundleDir, type ReplayServer } from "../src/serve.ts";
+import { REPLAY_ORIGIN, bundleAvailable, parseRange, replayPage, serveDir, setBundleDir, type ReplayServer, vendorHint } from "../src/serve.ts";
 
 describe("parseRange", () => {
   it("handles a closed range", () => {
@@ -179,9 +179,14 @@ describe("serveDir", () => {
   });
 
   it("walks to the next port when one is taken", async () => {
-    const second = await serveDir(dir, server.port);
-    expect(second.port).toBe(server.port + 1);
+    // A fixed, quiet port rather than the fixture's ephemeral one: the walk
+    // goes to +1, and in the ephemeral range something else may well hold it
+    // -- and if the OS handed out 65535, listen(65536) throws outright.
+    const first = await serveDir(dir, 18310);
+    const second = await serveDir(dir, first.port);
+    expect(second.port).toBe(first.port + 1);
     await second.close();
+    await first.close();
   });
 
   describe("the self-hosted viewer", () => {
@@ -247,21 +252,64 @@ describe("serveDir", () => {
       expect(html).toContain("example.wacz — btrix");
     });
 
-    it("only embeds an archive that is really in the directory", async () => {
-      // `source` lands in the DOM, so it is matched against the directory
-      // rather than escaped and hoped for.
-      const res = await get("?source=" + encodeURIComponent('"><script>alert(1)</script>'));
+    it("404s a source that names nothing, rather than replaying another archive", async () => {
+      // Substituting the first archive meant a deleted or renamed file, or a
+      // stale bookmark, loaded successfully showing the wrong capture.
+      fs.writeFileSync(path.join(dir, "other.wacz"), body);
+      const res = await get("?source=gone.wacz");
+
+      expect(res.status).toBe(404);
       const html = await res.text();
-      expect(html).not.toContain("<script>alert(1)");
-      // Falls back to a real archive rather than embedding nothing.
-      expect(html).toContain('source="example.wacz"');
+      expect(html).toContain("gone.wacz");
+      expect(html).not.toContain("<replay-web-page");
+      // And it says what is actually here, as links.
+      expect(html).toContain("example.wacz");
+      expect(html).toContain("other.wacz");
+    });
+
+    it("serves a second archive correctly on the same port", async () => {
+      // The worker claims the whole origin and is reused across archives and
+      // across sessions on a port ReplayServers keeps stable per directory,
+      // so switching source on one origin has to stay correct.
+      fs.writeFileSync(path.join(dir, "second.wacz"), body);
+
+      const first = await (await get("?source=example.wacz")).text();
+      const second = await (await get("?source=second.wacz")).text();
+
+      expect(first).toContain('source="example.wacz"');
+      expect(second).toContain('source="second.wacz"');
+      expect(second).not.toContain('source="example.wacz"');
+      // And both are still fetchable as bytes from the one origin.
+      expect((await get("example.wacz")).status).toBe(200);
+      expect((await get("second.wacz")).status).toBe(200);
+    });
+
+    it("defaults only when no source was asked for", async () => {
+      const res = await get("");
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain('source="example.wacz"');
+    });
+
+    it("escapes the name it echoes back in the 404", async () => {
+      // No slash in the payload: basename would otherwise strip everything
+      // before the last one and the escaping would never be exercised.
+      const res = await get("?source=" + encodeURIComponent('"><img src=x onerror=alert(1)>'));
+      expect(res.status).toBe(404);
+      const html = await res.text();
+
+      expect(html).not.toContain("<img src=x");
+      expect(html).not.toContain("onerror=alert(1)>");
+      expect(html).toContain("&lt;img");
+      expect(html).toContain("&quot;");
     });
 
     it("refuses a traversal dressed up as a source", async () => {
       const res = await get("?source=" + encodeURIComponent("../../../../etc/passwd"));
+      expect(res.status).toBe(404);
       const html = await res.text();
+      expect(html).not.toContain("<replay-web-page");
+      // Reduced to a basename, so it cannot name a path outside the directory.
       expect(html).not.toContain("etc/passwd");
-      expect(html).toContain('source="example.wacz"');
     });
 
     it("still resolves archives by basename, so the directory is not walkable", async () => {
@@ -290,11 +338,22 @@ describe("serveDir", () => {
   });
 
   describe("replayPage", () => {
-    it("points the worker at sw.js, which the server puts under replay/", () => {
-      // The element asks for ./replay/sw.js. Beside ui.js it is not found, and
-      // the only symptom is "Service worker not found".
-      expect(replayPage("a.wacz")).toContain('swName="sw.js"');
+    it("references the two files the server actually routes", () => {
+      // Assert btrix's side of the contract rather than a vendor default: the
+      // page asks for ./ui.js and a worker resolved against replaybase
+      // "./replay/", and the bundle routes serve exactly those two paths.
       expect(replayPage("a.wacz")).toContain('src="./ui.js"');
+      expect(replayPage("a.wacz")).toContain('swName="sw.js"');
+    });
+
+    it("is served at the paths the page asks for", async () => {
+      // The pairing is the thing: a page asking for ./replay/sw.js and a
+      // server putting sw.js beside ui.js fails with only "Service worker
+      // not found", which says nothing about the cause.
+      expect((await get("ui.js")).status).toBe(200);
+      expect((await get("replay/sw.js")).status).toBe(200);
+      // And not beside ui.js, which is where it is tempting to put it.
+      expect((await get("sw.js")).status).toBe(404);
     });
   });
 });
@@ -352,6 +411,23 @@ describe("without the vendored viewer", () => {
     const res = await fetch(`http://127.0.0.1:${server.port}/ui.js`);
     expect(res.status).toBe(404);
     expect(await res.text()).toContain("vendor-replay.sh");
+  });
+
+  it("gives an absolute path, not one relative to the user's cwd", () => {
+    // "run scripts/vendor-replay.sh" is no use from someone else's directory.
+    const hint = vendorHint();
+    expect(path.isAbsolute(hint.slice(hint.indexOf("/")))).toBe(true);
+    expect(hint).toContain("vendor-replay.sh");
+  });
+
+  it("offers reinstalling when it looks like a global install", () => {
+    const was = setBundleDir(path.join("/tmp", "node_modules", "@edsu", "btrix", "vendor", "replaywebpage"));
+    try {
+      // Re-vendoring into a global node_modules is undone by the next upgrade.
+      expect(vendorHint()).toContain("reinstall btrix");
+    } finally {
+      setBundleDir(was);
+    }
   });
 
   it("still serves archives", async () => {

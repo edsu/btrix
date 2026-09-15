@@ -348,11 +348,13 @@ These answer two *different* questions:
   even with an identical WACZ. If something replays in ReplayWeb.page but not
   ArchiveWeb.page, suspect the app (version, incomplete import, or a stray
   live-network fallback) — not your archive.
-- Large WACZ + a hosted replayer: serve the file locally over HTTP with **range
-  requests + CORS** using `btrix_view`, or `node <btrix>/src/serve.ts <dir> [port]`
-  (ReplayWeb.page reads the ZIP index via `Range: bytes=-N` suffix requests, so
-  the server must honor those), then load it via
-  `?source=http://127.0.0.1:PORT/foo.wacz`.
+- Large WACZ: serve it locally with `btrix_view`, or
+  `node <btrix>/src/serve.ts <dir> [port]`, then open
+  `http://127.0.0.1:PORT/?source=foo.wacz`. The viewer is served from that same
+  origin, so there is no cross-origin fetch to be refused — which is the point:
+  a page on `replayweb.page` reaching `127.0.0.1` is blocked by some browsers
+  and by LAN-blocking extensions. The server honours `Range: bytes=-N` suffix
+  requests, which is how the ZIP index is read.
 - **Full-text search:** ReplayWeb.page's page search (URL / title / text) only
   searches text stored in the page index, so crawl with `text: to-pages` — that
   writes each page's text into `pages.jsonl`. Text written `to-warc` lives in
