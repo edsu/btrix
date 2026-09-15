@@ -10,7 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileSize } from "./sizes.ts";
-import type { Store } from "./store.ts";
+import { isSafeStoreName, type Store } from "./store.ts";
 
 /** Where the crawler sees profiles, given the store is mounted at /crawls. */
 export const CONTAINER_PROFILES = "/crawls/profiles";
@@ -61,5 +61,5 @@ export function findProfile(store: Store, name: string): Profile | undefined {
 /** Profile names are used as filenames; keep them boring. */
 export function safeProfileName(raw: string): string | undefined {
   const name = raw.trim().replace(/\.tar\.gz$/, "");
-  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) ? name : undefined;
+  return isSafeStoreName(name) ? name : undefined;
 }

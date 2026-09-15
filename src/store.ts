@@ -47,6 +47,17 @@ chrome-profile/
 settings.json
 `;
 
+/**
+ * Whether a name is safe to build a path inside the store from.
+ *
+ * Config and profile names arrive from the model and end up in path.join,
+ * mkdir and cpSync. Defined here, next to the paths it protects, and shared
+ * rather than restated: a validator copied into two files drifts.
+ */
+export function isSafeStoreName(name: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name);
+}
+
 export function storeAt(root: string, source: Store["source"]): Store {
   return {
     root,
@@ -108,6 +119,11 @@ export function runId(config: string, now: Date): string {
  * `/crawls/config/behaviors/foo.js` keep resolving.
  */
 export function prepareRun(store: Store, config: string, now: Date): string {
+  // Reached with the raw name from btrix_run, independently of configPath, and
+  // it mkdirs and copies into whatever it is handed. A separator or a `..`
+  // here would put the run directory -- which run.sh then bind-mounts at
+  // /crawls -- anywhere on the disk.
+  if (!isSafeStoreName(config)) throw new Error(`Unsafe config name: ${JSON.stringify(config)}`);
   const dir = path.join(store.runsDir, runId(config, now));
   fs.mkdirSync(dir, { recursive: true });
   if (fs.existsSync(store.configDir)) {

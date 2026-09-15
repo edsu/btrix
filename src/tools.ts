@@ -42,7 +42,7 @@ import type { ReplayServers } from "./serve.ts";
 import { linesComponent } from "./tui.ts";
 import { humanBytes } from "./sizes.ts";
 import type { CrawlStats } from "./stats.ts";
-import { activeRun, collectionFor, ensureStore, prepareRun, type Store } from "./store.ts";
+import { activeRun, collectionFor, ensureStore, isSafeStoreName, prepareRun, type Store } from "./store.ts";
 import { untrusted, UNTRUSTED_NOTE } from "./untrusted.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -71,7 +71,23 @@ export function normalizeName(raw: string): string {
   return raw.trim().replace(/^@/, "").replace(/\.ya?ml$/, "");
 }
 
+/**
+ * A config name that is safe to build a path from.
+ *
+ * normalizeName tidies input for display and is not a validator: a separator
+ * or a `..` goes straight through it, and the name reaches both a
+ * path.join into config/ and prepareRun's mkdir + cpSync. Same shape as
+ * safeProfileName, for the same reason.
+ */
+export function safeConfigName(raw: string): string | undefined {
+  const name = normalizeName(raw);
+  return isSafeStoreName(name) ? name : undefined;
+}
+
 export function configPath(store: Store, name: string): string | undefined {
+  // The choke point for every read: an unsafe name resolves to nothing rather
+  // than to a file outside the store.
+  if (!safeConfigName(name)) return undefined;
   for (const ext of [".yaml", ".yml"]) {
     const p = path.join(store.configDir, `${name}${ext}`);
     if (fs.existsSync(p)) return p;
