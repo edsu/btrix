@@ -109,21 +109,41 @@ export function bundleAvailable(): boolean {
 /**
  * The page that embeds the viewer. Generated rather than shipped as a file so
  * the archive name is injected here, where it can be checked against the
- * directory first -- `source` reaching the DOM unvalidated would be an
- * injection in a page the user is about to open.
+ * directory first. That is not the escaping, though, and treating it as such
+ * was a mistake: matching the directory decides *which* name is used, not what
+ * the name contains. A `.wacz` called `x" onfocus="...` is in the directory and
+ * still closes the attribute.
+ *
+ * Hostile filenames are reachable. `collection:` is read out of a config with
+ * a loose regex and never goes through isSafeStoreName, finishRun turns it into
+ * the wacz filename, and the inventory hands it back as an archive -- so a
+ * config written from a crawled page's own text can end up naming the file that
+ * gets interpolated here. Escape it.
  */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export function replayPage(source: string): string {
+  // Escaped once, used twice: the attribute and the title are both HTML text
+  // contexts and both were injectable.
+  const safe = escapeHtml(source);
   return `<!doctype html>
 <html class="no-overflow">
   <head>
     <meta charset="utf-8">
-    <title>${source} — btrix</title>
+    <title>${safe} — btrix</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="./ui.js"></script>
     <style>html,body{margin:0;height:100%}replay-web-page{display:block;height:100vh}</style>
   </head>
   <body>
-    <replay-web-page source="${source}" swName="sw.js"></replay-web-page>
+    <replay-web-page source="${safe}" swName="sw.js"></replay-web-page>
   </body>
 </html>
 `;

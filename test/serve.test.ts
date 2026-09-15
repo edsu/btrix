@@ -212,6 +212,41 @@ describe("serveDir", () => {
       expect(Number(res.headers.get("content-length"))).toBeGreaterThan(100_000);
     });
 
+    it("escapes the archive name, which is not the same as matching it", async () => {
+      // Matching the directory decides which name is used, not what it
+      // contains -- and a hostile name is reachable, because `collection:` is
+      // read from a config with a loose regex, becomes the wacz filename, and
+      // comes back as an archive. So the name that reaches the DOM is escaped.
+      const nasty = 'x" onfocus="alert(1).wacz';
+      fs.writeFileSync(path.join(dir, nasty), body);
+      fs.rmSync(path.join(dir, "example.wacz"));
+
+      const html = await (await get("")).text();
+
+      expect(html).not.toContain('onfocus="alert(1)');
+      expect(html).toContain("&quot;");
+      // The real name still arrives, just inert.
+      expect(html).toContain("x&quot; onfocus=&quot;alert(1).wacz");
+    });
+
+    it("escapes the title as well as the attribute", async () => {
+      // No slash: it has to be a name the filesystem will actually accept.
+      const nasty = "a<script>alert(1).wacz";
+      fs.writeFileSync(path.join(dir, nasty), body);
+      fs.rmSync(path.join(dir, "example.wacz"));
+
+      const html = await (await get("")).text();
+
+      expect(html).not.toContain("<script>alert(1)");
+      expect(html).toContain("&lt;script&gt;alert(1)");
+    });
+
+    it("leaves an ordinary name readable", async () => {
+      const html = await (await get("")).text();
+      expect(html).toContain('source="example.wacz"');
+      expect(html).toContain("example.wacz — btrix");
+    });
+
     it("only embeds an archive that is really in the directory", async () => {
       // `source` lands in the DOM, so it is matched against the directory
       // rather than escaped and hoped for.
