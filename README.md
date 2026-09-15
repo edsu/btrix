@@ -252,4 +252,13 @@ useful to you, [support them](https://opencollective.com/webrecorder).
 
 ## License
 
-MIT
+btrix is MIT. See [LICENSE](LICENSE).
+
+The published package also carries two files from
+[ReplayWeb.page](https://github.com/webrecorder/replayweb.page) under
+**AGPL-3.0-or-later**, in `vendor/replaywebpage/`, so that an archive can be
+replayed from your own machine rather than through a public origin. They are
+taken unmodified, and btrix serves them rather than linking to them — the
+version, source and digests are in `vendor/replaywebpage/provenance.json`, and
+`scripts/vendor-replay.sh` reproduces the copy. For the distribution as a
+whole that makes it `MIT AND AGPL-3.0-or-later`.

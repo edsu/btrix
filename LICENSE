@@ -19,3 +19,32 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+================================================================================
+
+btrix's own source is MIT, above. The published package also contains a
+third-party component under a different licence, and this is not a
+sublicensing of it:
+
+  vendor/replaywebpage/
+      ReplayWeb.page, by Webrecorder Software.
+      AGPL-3.0-or-later. Full text in vendor/replaywebpage/LICENSE.
+
+      Two files, `ui.js` and `replay/sw.js`, taken unmodified from the npm
+      package `replaywebpage`. btrix does not link to, import, or call into
+      them; it serves them to the browser as static files so an archive can
+      be replayed without sending the browser to a public origin.
+
+      The exact version, upstream location and file digests are recorded in
+      vendor/replaywebpage/provenance.json, and scripts/vendor-replay.sh
+      reproduces the copy.
+
+      Those files are minified build output rather than the preferred form
+      for modification. The corresponding source for the recorded version is
+      published by Webrecorder at:
+
+        https://github.com/webrecorder/replayweb.page
+        https://www.npmjs.com/package/replaywebpage
+
+The SPDX expression for the distribution as a whole is
+`MIT AND AGPL-3.0-or-later`.

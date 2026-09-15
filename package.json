@@ -2,7 +2,7 @@
   "name": "@edsu/btrix",
   "version": "0.1.1",
   "description": "A chatbot for Browsertrix Crawler",
-  "license": "MIT",
+  "license": "MIT AND AGPL-3.0-or-later",
   "author": "Ed Summers",
   "type": "module",
   "pi": {
