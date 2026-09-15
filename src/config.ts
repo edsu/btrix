@@ -18,6 +18,12 @@ export interface ConfigSummary {
   seed?: string;
   scopeType?: string;
   pageLimit?: number;
+  /**
+   * `extraHops` follows links N hops *beyond* the scope, off-site included, so
+   * it widens whatever scopeType says -- a `prefix` crawl with extraHops set is
+   * no longer bounded by the seed's path.
+   */
+  extraHops?: number;
   /** Custom behavior filenames referenced by `customBehaviors`. */
   behaviors: string[];
   generateWacz: boolean;
@@ -41,6 +47,7 @@ export function readConfig(path: string, name: string): ConfigSummary {
 
   const behaviors = [...text.matchAll(/behaviors\/([^\s"']+\.js)/g)].map((m) => m[1]!);
   const limit = first(text, /^\s*pageLimit:\s*(\d+)/m);
+  const hops = first(text, /^\s*extraHops:\s*(\d+)/m);
   const generate = first(text, /^\s*generateWACZ:\s*(\S+)/m);
   const textOpt = first(text, /^\s*text:\s*(\S+)/m);
 
@@ -50,6 +57,7 @@ export function readConfig(path: string, name: string): ConfigSummary {
     collection: first(text, /^\s*collection:\s*(.+?)\s*$/m) ?? name,
     seed: first(text, /^\s*-?\s*url:\s*(\S+)/m),
     scopeType: first(text, /^\s*scopeType:\s*(\S+)/m),
+    extraHops: hops ? Number.parseInt(hops, 10) : undefined,
     pageLimit: limit ? Number.parseInt(limit, 10) : undefined,
     behaviors: [...new Set(behaviors)],
     // The crawler's own default is false, but every btrix-scaffolded config

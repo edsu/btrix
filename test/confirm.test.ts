@@ -42,12 +42,58 @@ describe("describeScope", () => {
 });
 
 describe("isOpenEnded", () => {
-  it("is true only for a wide scope with no limit", () => {
+  it("is true for a scope bounded only by how big the site turns out to be", () => {
     expect(isOpenEnded(config({ scopeType: "host" }))).toBe(true);
     expect(isOpenEnded(config({ scopeType: "domain" }))).toBe(true);
-    expect(isOpenEnded(config({ scopeType: "host", pageLimit: 25 }))).toBe(false);
+  });
+
+  it("is true for `any`, which is wider still and does not stop at the site", () => {
+    // Left out originally, which meant the widest scope the crawler offers
+    // was the one scope that got no question.
+    expect(isOpenEnded(config({ scopeType: "any" }))).toBe(true);
+  });
+
+  it("is false where a url or a path bounds it", () => {
     expect(isOpenEnded(config({ scopeType: "prefix" }))).toBe(false);
     expect(isOpenEnded(config({ scopeType: "page" }))).toBe(false);
+    expect(isOpenEnded(config({ scopeType: "page-spa" }))).toBe(false);
+    expect(isOpenEnded(config({ scopeType: undefined }))).toBe(false);
+  });
+
+  it("leaves `custom` alone, since its breadth is a deliberate regex", () => {
+    expect(isOpenEnded(config({ scopeType: "custom" }))).toBe(false);
+  });
+
+  it("is true when extraHops widens an otherwise bounded scope", () => {
+    // extraHops follows links beyond the scope, off-site included, so the
+    // path bound that makes `prefix` safe stops applying.
+    expect(isOpenEnded(config({ scopeType: "prefix", extraHops: 1 }))).toBe(true);
+    expect(isOpenEnded(config({ scopeType: "page", extraHops: 2 }))).toBe(true);
+    expect(isOpenEnded(config({ scopeType: "prefix", extraHops: 0 }))).toBe(false);
+  });
+
+  it("is false whenever a pageLimit caps it, whatever the scope", () => {
+    // A limit is the answer to all of the above, which is what the dialog
+    // suggests adding.
+    for (const scopeType of ["host", "domain", "any", "prefix"]) {
+      expect(isOpenEnded(config({ scopeType, pageLimit: 25 })), scopeType).toBe(false);
+    }
+    expect(isOpenEnded(config({ scopeType: "prefix", extraHops: 1, pageLimit: 25 }))).toBe(false);
+  });
+});
+
+describe("describeScope names every value the crawler accepts", () => {
+  it("does not call a set scope unset", () => {
+    // The default branch says "scope not set", which was being shown for
+    // values that are very much set.
+    for (const scopeType of ["page", "page-spa", "prefix", "host", "domain", "any", "custom"]) {
+      expect(describeScope(config({ scopeType })), scopeType).not.toContain("scope not set");
+    }
+    expect(describeScope(config({ scopeType: undefined }))).toContain("scope not set");
+  });
+
+  it("says out loud that `any` leaves the site", () => {
+    expect(describeScope(config({ scopeType: "any" }))).toContain("does not stop at the seed's site");
   });
 });
 

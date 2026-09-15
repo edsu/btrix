@@ -227,8 +227,22 @@ config with `pageLimit: 3` in a scratch directory and run `btrix` there.
 All the crawl tooling works: writing configs, running, watching, stopping,
 listing, reviewing, replaying, login profiles, behavior authoring and cleanup.
 
-Signing in to a model provider is `/login` — pi's own command, and the one place
-btrix's vocabulary does not reach.
+Signing in to a model provider is `/login` — pi's own command, and one of two
+places btrix's vocabulary does not reach.
+
+The other is on the way out: pi prints `To resume this session: pi --session
+<id>` when you quit. Use `btrix` rather than `pi` there —
+
+```bash
+btrix --session <id>    # that session
+btrix -c                # continue the last one
+btrix -r                # pick from a list
+```
+
+Bare `pi` would look in `~/.pi/agent` rather than btrix's own directory, so it
+would not find the session; and if it did, it would open without the crawl
+tools and with pi's default toolset instead of btrix's. The message is printed
+after extensions have shut down, so btrix cannot correct it in place.
 
 ## Credits
 

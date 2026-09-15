@@ -25,6 +25,8 @@ export function describeScope(config: ConfigSummary): string {
   switch (config.scopeType) {
     case "page":
       return `${seed} and nothing else`;
+    case "page-spa":
+      return `${seed} and its in-page routes, nothing else`;
     case "prefix":
       return `${seed} and anything beneath its path`;
     case "host":
@@ -39,14 +41,37 @@ export function describeScope(config: ConfigSummary): string {
       } catch {
         return "every page on the seed's domain and its subdomains";
       }
+    case "any":
+      return "every link it finds, anywhere — this does not stop at the seed's site";
+    case "custom":
+      return `${seed} plus whatever scopeIncludeRx matches`;
     default:
       return `${seed} (scope not set, so the crawler's default applies)`;
   }
 }
 
-/** Whether this config could plausibly run away. */
+/**
+ * Whether this config could plausibly run away.
+ *
+ * The line is whether the crawl's size is bounded by something the user chose
+ * or by something they do not control. `page`, `page-spa` and `prefix` are
+ * bounded by a url or a path. `host` and `domain` are bounded only by how big
+ * the site turns out to be, which is the thing nobody knows in advance.
+ *
+ * `any` follows every link anywhere and does not stop at the site, so it
+ * belongs here too -- it is strictly wider than `domain`. `custom` is left
+ * out: its breadth is whatever `scopeIncludeRx` says, and a hand-written
+ * regex is usually a deliberate narrowing, so gating it would ask about
+ * configs that are already careful.
+ *
+ * `extraHops` follows links beyond the scope, off-site included, so it widens
+ * even the bounded types -- `prefix` with extraHops is not bounded by the path
+ * any more.
+ */
 export function isOpenEnded(config: ConfigSummary): boolean {
-  return !config.pageLimit && (config.scopeType === "host" || config.scopeType === "domain");
+  if (config.pageLimit) return false;
+  if (config.extraHops && config.extraHops > 0) return true;
+  return config.scopeType === "host" || config.scopeType === "domain" || config.scopeType === "any";
 }
 
 /**
@@ -70,7 +95,10 @@ export async function confirmCrawl(
 
   if (isOpenEnded(config)) {
     const lines = [
-      `scope   ${config.scopeType} — ${describeScope(config)}`,
+      `scope   ${config.scopeType ?? "not set"} — ${describeScope(config)}`,
+      ...(config.extraHops
+        ? [`hops    extraHops ${config.extraHops} — also follows links this far beyond the scope, off-site included`]
+        : []),
       "limit   none",
       "",
       "This could run for hours and put real load on the site.",
@@ -83,8 +111,9 @@ export async function confirmCrawl(
       return {
         proceed: false,
         reason:
-          `the scope is ${config.scopeType} with no pageLimit. Suggest adding one — 25 is a good first ` +
-          "attempt at an unfamiliar site — then run it again.",
+          `the scope is ${config.scopeType ?? "unset"}${config.extraHops ? ` with extraHops ${config.extraHops}` : ""} ` +
+          "and there is no pageLimit. Suggest adding one — 25 is a good first attempt at an unfamiliar site — " +
+          "then run it again.",
       };
     }
   }
