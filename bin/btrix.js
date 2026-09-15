@@ -90,6 +90,76 @@ function quietFirstRun() {
 secureAgentDir();
 quietFirstRun();
 
+/**
+ * Answer --help and --version here rather than letting them through.
+ *
+ * pi answers them as itself: its usage says `pi`, it documents flags btrix
+ * does not use, and it advertises "read, bash, edit, write tools" -- bash
+ * being one btrix deliberately does not grant. Someone who installed a web
+ * archiving tool and typed --help should not have to work out what pi is.
+ *
+ * Only these two. Every other flag still passes through, because pi's
+ * --session, -c, -r, --model and -p are all useful here and reimplementing
+ * them would be worse than forwarding them.
+ */
+function version() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(PKG, "package.json"), "utf8")).version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+const HELP = `btrix ${version()} — high-fidelity web archives, by conversation
+
+Describe what you want archived. btrix settles the scope with you, writes the
+crawl config, runs Browsertrix Crawler in a container, and hands you a WACZ.
+
+usage
+  btrix [options]
+
+  Then talk to it: "archive the news section of example.org", "crawl example",
+  "did that crawl work?", "replay example".
+
+options
+  --dir <path>        the btrix store (default: ./btrix)
+  -c, --continue      resume the last session in this directory
+  -r, --resume        pick a session to resume
+  --session <id>      resume a particular session
+  --model <pattern>   choose a model for this session
+  -p, --print         run one prompt without the interactive UI
+  -h, --help          this
+  -V, --version       print the version
+
+  Other options are passed through to the agent runtime underneath.
+
+environment
+  BTRIX_DIR                the store, same as --dir
+  BTRIX_AGENT_DIR          where the model credential, preferences and session
+                           history live (default: ~/.btrix, mode 0700)
+  BTRIX_CRAWLER_VERSION    browsertrix-crawler image tag (default: latest)
+  BTRIX_CHROME             path to Chrome for the scratch browser
+
+first run
+  Type /login to connect a Claude, ChatGPT or Copilot subscription, or set an
+  API key such as ANTHROPIC_API_KEY. Crawling itself needs no account.
+
+  Crawls are detached: quitting does not stop one, and btrix picks it back up.
+
+  Browsertrix Crawler and the WACZ format are the work of Webrecorder.
+  https://github.com/edsu/btrix
+`;
+
+const flags = process.argv.slice(2);
+if (flags.includes("--help") || flags.includes("-h")) {
+  process.stdout.write(HELP);
+  process.exit(0);
+}
+if (flags.includes("--version") || flags.includes("-V")) {
+  process.stdout.write(`btrix ${version()}\n`);
+  process.exit(0);
+}
+
 const systemPrompt = fs.readFileSync(path.join(PKG, "assets", "system-prompt.md"), "utf8");
 const { command, prefix } = findPi();
 
