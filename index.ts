@@ -32,6 +32,8 @@ import { firstRunPanel, modelLabel, probeAuth, readyHeader } from "./src/firstru
 import { buildInventory } from "./src/inventory.ts";
 import { listProfiles } from "./src/profile.ts";
 import { configPath, createTools, listConfigs, normalizeName } from "./src/tools.ts";
+import { refuseRead, refuseWrite, type Scope } from "./src/paths.ts";
+import { resolveAgentDir } from "./src/agentdir.ts";
 
 /** Free space below which starting a crawl is worth a confirmation. */
 const LOW_DISK_BYTES = 5 * 1024 ** 3;
@@ -371,7 +373,42 @@ export default function (pi: ExtensionAPI) {
     return undefined;
   });
 
+  /**
+   * Where the model may write. Recomputed per call so a `--dir` store and a
+   * relative path are both resolved against what is true now.
+   */
+  const scope = (): Scope => ({ cwd: process.cwd(), storeRoot: store.root, agentDir: resolveAgentDir() });
+
   pi.on("tool_call", async (event, ctx) => {
+    // pi ships no permission system by design, and `write`, `edit` and `bash`
+    // are handed to the model so it can author configs and behaviors. Nothing
+    // scopes them to this project, so scope them here: a crawl reads pages
+    // nobody vetted, and their titles reach the model as text.
+    if (event.toolName === "write" || event.toolName === "edit") {
+      const refusal = refuseWrite(scope(), String((event.input as { path?: unknown }).path ?? ""));
+      return refusal ? { block: true, reason: refusal } : undefined;
+    }
+
+    if (event.toolName === "read") {
+      const refusal = refuseRead(scope(), String((event.input as { path?: unknown }).path ?? ""));
+      return refusal ? { block: true, reason: refusal } : undefined;
+    }
+
+    if (event.toolName === "bash") {
+      // Deliberately not scoped by inspecting the command. $HOME, subshells,
+      // pipes and eval make that unsound, and a gate that looks like it works
+      // is worse than none -- so put a person in front of it instead.
+      const command = String((event.input as { command?: unknown }).command ?? "");
+      if (!ctx.hasUI) {
+        return {
+          block: true,
+          reason: "bash needs a confirmation, and there is no UI to ask in. Use the btrix_* tools, read or write.",
+        };
+      }
+      const ok = await ctx.ui.confirm("Run this command?", command);
+      return ok ? undefined : { block: true, reason: "The user declined to run that command." };
+    }
+
     if (event.toolName !== "btrix_run") return undefined;
 
     // The same normalisation the tool applies, or a name the tool accepts but
