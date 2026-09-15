@@ -69,13 +69,48 @@ describe("ensureStore", () => {
     expect(ignore).not.toMatch(/^config\/$/m);
   });
 
-  it("keeps profiles private and does not clobber an edited .gitignore", () => {
+  it("keeps profiles private", () => {
     const s = ensureStore(resolveStore({ cwd: dir, env: {} }));
     expect(fs.statSync(s.profilesDir).mode & 0o777).toBe(0o700);
+  });
 
-    fs.writeFileSync(path.join(s.root, ".gitignore"), "# mine\n");
+  it("keeps an edited .gitignore, but adds back what protects credentials", () => {
+    // Leaving a hand-written file untouched was the old behaviour, and it
+    // meant profiles/ went unignored -- so `git add -A` could publish live
+    // session cookies, which is the one thing this file exists to stop.
+    const s = ensureStore(resolveStore({ cwd: dir, env: {} }));
+    const file = path.join(s.root, ".gitignore");
+
+    fs.writeFileSync(file, "# mine\nout/\n");
     ensureStore(s);
-    expect(fs.readFileSync(path.join(s.root, ".gitignore"), "utf8")).toBe("# mine\n");
+    const after = fs.readFileSync(file, "utf8");
+
+    expect(after).toContain("# mine");
+    expect(after).toContain("profiles/");
+    expect(after).toContain("chrome-profile/");
+    // Already present, so not added a second time.
+    expect(after.match(/^out\/$/gm)).toHaveLength(1);
+  });
+
+  it("adds nothing when every entry is already there", () => {
+    const s = ensureStore(resolveStore({ cwd: dir, env: {} }));
+    const file = path.join(s.root, ".gitignore");
+    const first = fs.readFileSync(file, "utf8");
+
+    ensureStore(s);
+    expect(fs.readFileSync(file, "utf8")).toBe(first);
+  });
+
+  it("copes with a file that has no trailing newline", () => {
+    const s = ensureStore(resolveStore({ cwd: dir, env: {} }));
+    const file = path.join(s.root, ".gitignore");
+
+    fs.writeFileSync(file, "# no newline at eof");
+    ensureStore(s);
+    const lines = fs.readFileSync(file, "utf8").split("\n");
+
+    expect(lines[0]).toBe("# no newline at eof");
+    expect(lines).toContain("profiles/");
   });
 });
 

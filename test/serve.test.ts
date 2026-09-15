@@ -8,7 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parseRange, type ReplayServer, serveDir } from "../src/serve.ts";
+import { REPLAY_ORIGIN, parseRange, serveDir, type ReplayServer } from "../src/serve.ts";
 
 describe("parseRange", () => {
   it("handles a closed range", () => {
@@ -61,7 +61,7 @@ describe("serveDir", () => {
   it("serves the whole file with CORS and an Accept-Ranges advert", async () => {
     const res = await get("example.wacz");
     expect(res.status).toBe(200);
-    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-origin")).toBe(REPLAY_ORIGIN);
     expect(res.headers.get("accept-ranges")).toBe("bytes");
     expect(res.headers.get("content-type")).toBe("application/wacz+zip");
     expect(Buffer.from(await res.arrayBuffer()).length).toBe(500);
@@ -89,7 +89,14 @@ describe("serveDir", () => {
   it("answers the preflight", async () => {
     const res = await fetch(`http://127.0.0.1:${server.port}/example.wacz`, { method: "OPTIONS" });
     expect(res.status).toBe(204);
-    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-origin")).toBe(REPLAY_ORIGIN);
+  });
+
+  it("does not allow every origin, so a stray tab cannot read an archive", async () => {
+    // The loopback bind is not a boundary against the user's own browser.
+    const res = await get("example.wacz");
+    expect(res.headers.get("access-control-allow-origin")).not.toBe("*");
+    expect(res.headers.get("vary")).toBe("Origin");
   });
 
   it("does not serve files outside the directory", async () => {

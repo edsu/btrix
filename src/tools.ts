@@ -213,7 +213,19 @@ export function createTools(
       // which need not match the config's filename.
       const collection = collectionFor(file, config);
 
-      if (await isCrawlRunning(config)) {
+      // isCrawlRunning is deliberately tri-state: undefined means the engine
+      // did not answer, which is not the same as "nothing is running". A
+      // `docker ps` that times out under the load of an in-flight crawl would
+      // otherwise fall through and start a second crawler for the same config,
+      // both writing the same collection and fighting over the screencast port.
+      const already = await isCrawlRunning(config);
+      if (already === undefined) {
+        return text(
+          `Could not ask ${engine.bin ?? "the container engine"} what is running, so starting a crawl now ` +
+            `risks running two for ${config} at once. Check with \`${engine.bin ?? "docker"} ps\` and try again.`,
+        );
+      }
+      if (already) {
         const running = activeRun(store, config, collection);
         if (running) monitor.watch({ config, collection, root: running });
         return text(`A crawl for ${config} is already running. Its progress is in the widget.`);

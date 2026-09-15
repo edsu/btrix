@@ -26,7 +26,7 @@ import { wordmarkLines } from "./src/wordmark.ts";
 import { activeRun, collectionFor, legacyRoot, resolveStore, type Store } from "./src/store.ts";
 import { applyNameCompletion, filterSuggestions, nameSuggestions, tokenBeforeCursor } from "./src/complete.ts";
 import { readConfig } from "./src/config.ts";
-import { confirmCrawl } from "./src/confirm.ts";
+import { confirmCrawl, isOpenEnded } from "./src/confirm.ts";
 import { engineStatus } from "./src/engine.ts";
 import { firstRunPanel, modelLabel, probeAuth, readyHeader } from "./src/firstrun.ts";
 import { buildInventory } from "./src/inventory.ts";
@@ -425,6 +425,17 @@ export default function (pi: ExtensionAPI) {
       // No dialog available, so apply the same judgements without asking.
       if (inv?.free !== undefined && inv.free < LOW_DISK_BYTES) {
         return { block: true, reason: `Only ${humanBytes(inv.free)} free; the crawler aborts when the disk fills.` };
+      }
+      // This used to stop at the disk check, which quietly made a headless
+      // session the one place an unbounded whole-host crawl could start --
+      // the mistake confirmCrawl exists to catch, and the expensive one.
+      if (isOpenEnded(config)) {
+        return {
+          block: true,
+          reason:
+            `${name} is scoped to the whole ${config.scopeType} with no pageLimit, and there is no UI to confirm ` +
+            "that in. Set a pageLimit, narrow the scope, or run btrix interactively.",
+        };
       }
       return undefined;
     }

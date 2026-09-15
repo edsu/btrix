@@ -25,9 +25,20 @@ export interface ReplayServer {
   close(): Promise<void>;
 }
 
+/**
+ * ReplayWeb.page fetches the archive from here over CORS, so some origin has
+ * to be allowed -- but not every origin. Binding to 127.0.0.1 is not a
+ * boundary against the user's own browser: with `*`, any open tab could fetch
+ * a .wacz, and the handler serves any file in the directory by basename, so
+ * the .btrix.json sidecar (which carries the full config text) goes with it.
+ * An archive of a logged-in crawl is exactly the thing not to hand over.
+ */
+export const REPLAY_ORIGIN = "https://replayweb.page";
+
 const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "*",
+  "Access-Control-Allow-Origin": REPLAY_ORIGIN,
+  "Access-Control-Allow-Headers": "range",
+  "Vary": "Origin",
   "Accept-Ranges": "bytes",
 };
 
@@ -148,7 +159,7 @@ export async function serveDir(dir: string, preferredPort = 8087, attempts = 10)
   return {
     port,
     dir,
-    url: (file: string) => `https://replayweb.page/?source=http://localhost:${port}/${encodeURIComponent(file)}`,
+    url: (file: string) => `${REPLAY_ORIGIN}/?source=http://localhost:${port}/${encodeURIComponent(file)}`,
     close: () =>
       new Promise<void>((resolve) => {
         server.close(() => resolve());

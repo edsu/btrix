@@ -97,8 +97,24 @@ export function ensureStore(store: Store): Store {
   }
   fs.mkdirSync(store.profilesDir, { recursive: true, mode: 0o700 });
 
+  // Append what is missing rather than skipping the write when the file
+  // exists. A .gitignore already there -- hand-written, or left by an older
+  // btrix with a shorter list -- otherwise meant profiles/ was never ignored,
+  // and `git add -A` would sweep up live session cookies, which is the exact
+  // thing this file is here to prevent.
   const ignore = path.join(store.root, ".gitignore");
-  if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, STORE_GITIGNORE);
+  const existing = fs.existsSync(ignore) ? fs.readFileSync(ignore, "utf8") : undefined;
+  if (existing === undefined) {
+    fs.writeFileSync(ignore, STORE_GITIGNORE);
+  } else {
+    const have = new Set(existing.split("\n").map((l) => l.trim()));
+    const missing = STORE_GITIGNORE.split("\n")
+      .filter((l) => l.trim() && !l.trim().startsWith("#") && !have.has(l.trim()));
+    if (missing.length) {
+      const pad = existing.endsWith("\n") || existing === "" ? "" : "\n";
+      fs.appendFileSync(ignore, `${pad}# Added by btrix.\n${missing.join("\n")}\n`);
+    }
+  }
   return store;
 }
 
