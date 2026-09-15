@@ -11,6 +11,9 @@
  * continuously for free, and the model is left the work it is actually good at.
  */
 
+import * as os from "node:os";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Box, Text } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { finishRun, type Outcome } from "./src/finish.ts";
@@ -32,11 +35,14 @@ import { firstRunPanel, modelLabel, probeAuth, readyHeader } from "./src/firstru
 import { buildInventory } from "./src/inventory.ts";
 import { listProfiles } from "./src/profile.ts";
 import { configPath, createTools, listConfigs, normalizeName } from "./src/tools.ts";
-import { refuseRead, refuseWrite, type Scope } from "./src/paths.ts";
+import { judgeRead, refuseWrite, type Scope } from "./src/paths.ts";
 import { resolveAgentDir } from "./src/agentdir.ts";
 
 /** Free space below which starting a crawl is worth a confirmation. */
 const LOW_DISK_BYTES = 5 * 1024 ** 3;
+
+/** The installed package, which is where the skills keep their reference docs. */
+const PKG_ROOT = path.dirname(fileURLToPath(import.meta.url));
 
 const widgetKey = (config: string) => `btrix:${config}`;
 
@@ -377,7 +383,13 @@ export default function (pi: ExtensionAPI) {
    * Where the model may write. Recomputed per call so a `--dir` store and a
    * relative path are both resolved against what is true now.
    */
-  const scope = (): Scope => ({ cwd: process.cwd(), storeRoot: store.root, agentDir: resolveAgentDir() });
+  const scope = (): Scope => ({
+    cwd: process.cwd(),
+    storeRoot: store.root,
+    agentDir: resolveAgentDir(),
+    packageRoot: PKG_ROOT,
+    home: os.homedir(),
+  });
 
   pi.on("tool_call", async (event, ctx) => {
     // pi ships no permission system by design, and `write`, `edit` and `bash`
@@ -390,8 +402,15 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (event.toolName === "read") {
-      const refusal = refuseRead(scope(), String((event.input as { path?: unknown }).path ?? ""));
-      return refusal ? { block: true, reason: refusal } : undefined;
+      // Three tiers: the job's own directories pass, credential stores never
+      // do, and anything else is the user's call. A read of ~/.ssh or ~/.aws
+      // is not something to put behind a prompt that gets clicked through.
+      const verdict = judgeRead(scope(), String((event.input as { path?: unknown }).path ?? ""));
+      if (verdict.kind === "allow") return undefined;
+      if (verdict.kind === "deny") return { block: true, reason: verdict.reason };
+      if (!ctx.hasUI) return { block: true, reason: `${verdict.reason} There is no UI to confirm it in.` };
+      const ok = await ctx.ui.confirm("Read this file?", verdict.reason);
+      return ok ? undefined : { block: true, reason: "The user declined that read." };
     }
 
     if (event.toolName === "bash") {
