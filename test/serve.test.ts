@@ -94,9 +94,51 @@ describe("serveDir", () => {
 
   it("does not allow every origin, so a stray tab cannot read an archive", async () => {
     // The loopback bind is not a boundary against the user's own browser.
+    // Note this is enforced by the browser, not here: the bytes still go out,
+    // and script on another origin is what gets refused them.
     const res = await get("example.wacz");
     expect(res.headers.get("access-control-allow-origin")).not.toBe("*");
     expect(res.headers.get("vary")).toBe("Origin");
+  });
+
+  it("exposes the range headers, or the reader cannot see what it got", async () => {
+    // Only the safelisted response headers reach script by default, and
+    // Content-Range is not one of them.
+    const res = await fetch(`http://127.0.0.1:${server.port}/example.wacz`, {
+      headers: { Origin: REPLAY_ORIGIN, Range: "bytes=-100" },
+    });
+    expect(res.status).toBe(206);
+    const exposed = (res.headers.get("access-control-expose-headers") ?? "").toLowerCase();
+    for (const h of ["content-range", "accept-ranges", "content-length"]) {
+      expect(exposed, h).toContain(h);
+    }
+    expect(res.headers.get("content-range")).toBe("bytes 400-499/500");
+  });
+
+  it("allows whatever headers the preflight asks for", async () => {
+    // Narrowing these bought nothing -- a page on another origin is already
+    // refused -- and would break a header ReplayWeb.page decided to send.
+    const res = await fetch(`http://127.0.0.1:${server.port}/example.wacz`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: REPLAY_ORIGIN,
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "range,x-something-new",
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-headers")).toBe("range,x-something-new");
+    // And the origin stays narrow, which is the part that matters.
+    expect(res.headers.get("access-control-allow-origin")).toBe(REPLAY_ORIGIN);
+  });
+
+  it("falls back to range when a preflight names nothing", async () => {
+    const res = await fetch(`http://127.0.0.1:${server.port}/example.wacz`, {
+      method: "OPTIONS",
+      headers: { Origin: REPLAY_ORIGIN, "Access-Control-Request-Method": "GET" },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-headers")).toBe("range");
   });
 
   it("does not serve files outside the directory", async () => {

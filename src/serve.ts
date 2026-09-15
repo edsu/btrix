@@ -37,9 +37,16 @@ export const REPLAY_ORIGIN = "https://replayweb.page";
 
 const CORS = {
   "Access-Control-Allow-Origin": REPLAY_ORIGIN,
-  "Access-Control-Allow-Headers": "range",
+  // The origin is the boundary. Which request headers are allowed is not:
+  // a page on another origin is already refused, so restricting these buys
+  // nothing and risks breaking a header ReplayWeb.page decides to send.
+  // Echoed from the preflight instead -- see the OPTIONS branch.
   "Vary": "Origin",
   "Accept-Ranges": "bytes",
+  // Without this, script can only read the safelisted response headers, so
+  // Content-Range and Accept-Ranges would be invisible to the reader that
+  // asked for the range in the first place.
+  "Access-Control-Expose-Headers": "content-range, accept-ranges, content-length, content-type",
 };
 
 /** `bytes=0-99`, `bytes=100-`, and the suffix form `bytes=-100`. */
@@ -70,7 +77,15 @@ function contentType(file: string): string {
 export async function serveDir(dir: string, preferredPort = 8087, attempts = 10): Promise<ReplayServer> {
   const server = http.createServer((req, res) => {
     if (req.method === "OPTIONS") {
-      res.writeHead(204, CORS);
+      // Allow whatever was asked for. `Range` is CORS-safelisted, so a plain
+      // range GET never preflights at all; this is for anything else the
+      // reader sends, which is not something to guess at from here.
+      const asked = req.headers["access-control-request-headers"];
+      res.writeHead(204, {
+        ...CORS,
+        "Access-Control-Allow-Headers": typeof asked === "string" && asked ? asked : "range",
+        "Access-Control-Max-Age": "600",
+      });
       res.end();
       return;
     }
