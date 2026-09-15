@@ -1,19 +1,20 @@
 /**
  * Where the model is allowed to read and write.
  *
- * btrix hands the model pi's `write`, `edit` and `bash`, because authoring a
- * crawl config and a custom behavior is most of the job. Those tools are not
- * scoped to a directory, and pi ships no permission system, so without a gate
- * one model turn can read `~/.btrix/auth.json` or append a line to `~/.zshrc`.
- * That matters more here than in a coding agent: a crawl pulls in pages nobody
- * vetted, and their titles and URLs reach the model as text.
+ * btrix hands the model pi's `read`, `write`, `edit` and `bash`, because
+ * authoring a crawl config and a custom behavior is most of the job. Those
+ * tools are not scoped to a directory, and pi ships no permission system, so
+ * without a gate one model turn can read `~/.btrix/auth.json` or `~/.ssh/id_rsa`
+ * or append a line to `~/.zshrc`. That matters more here than in a coding
+ * agent: a crawl pulls in pages nobody vetted, and their titles and URLs reach
+ * the model as text.
  *
  * Decisions here, enforcement in index.ts, so this stays testable without pi.
  *
- * This narrows the blast radius; it does not eliminate it. `bash` cannot be
- * scoped by reading the command -- see index.ts -- so a person is put in front
- * of it instead. Writes get a yes or no; reads get three tiers, because the
- * places a read legitimately goes are too broad for a single boundary.
+ * Both tools share one boundary, and it is default deny: a path is inside a
+ * root the job actually uses, or it is refused. `bash` is the exception, since
+ * it cannot be scoped by reading the command -- see index.ts, which puts a
+ * person in front of it instead.
  */
 
 import * as fs from "node:fs";
@@ -62,121 +63,62 @@ export interface Scope {
   /** btrix's own agent directory, which holds the model credential. */
   agentDir: string;
   /**
-   * The installed package. Reads only: the skills point the model at
-   * `reference/guide.md` and `assets/config-template.yaml`, which live here
-   * rather than in the user's directory, so a cwd-only read scope would break
-   * the behaviors and new-crawl skills.
+   * The installed package. Readable, not writable: the skills point the model
+   * at `reference/guide.md` and `assets/config-template.yaml`, which live here
+   * rather than in the user's directory.
    */
   packageRoot: string;
-  /** Home, for locating the credential stores below. Split out for tests. */
-  home: string;
 }
 
 /**
- * Credential stores, relative to home. A web archiving tool has no business in
- * any of them, so these are refused outright rather than offered as a
- * question -- a prompt the user sees often enough becomes a prompt they click
- * through, and these are the ones not to get wrong.
- *
- * A deny-list cannot be complete, which is why it is the third tier and not
- * the first: anything outside the allowed roots already has to be confirmed.
- * This list only decides what cannot be confirmed at all.
+ * Writes land in the working directory or the store. Nowhere else.
  */
-const CREDENTIAL_DIRS = [
-  ".ssh",
-  ".aws",
-  ".gnupg",
-  ".kube",
-  ".azure",
-  ".docker",
-  ".password-store",
-  ".config/gh",
-  ".config/gcloud",
-  ".local/share/keyrings",
-  "Library/Keychains",
-];
-
-/** Filenames that are a credential wherever they turn up, including in cwd. */
-const CREDENTIAL_FILES = [
-  ".netrc",
-  ".npmrc",
-  ".pypirc",
-  ".git-credentials",
-  "id_rsa",
-  "id_dsa",
-  "id_ecdsa",
-  "id_ed25519",
-];
-
-function isCredentialPath(scope: Scope, target: string): boolean {
-  if (CREDENTIAL_DIRS.some((d) => within(path.join(scope.home, ...d.split("/")), target))) return true;
-  const base = path.basename(target);
-  if (CREDENTIAL_FILES.includes(base)) return true;
-  // .env, .env.local, .env.production — secrets by convention, and nothing
-  // btrix does needs one.
-  return base === ".env" || base.startsWith(".env.");
+function writeRoots(scope: Scope): string[] {
+  return [scope.cwd, scope.storeRoot];
 }
 
 /**
- * Why this write should be refused, or undefined if it is fine.
- *
- * Two permitted roots, because `btrix --dir /Volumes/archive/x` deliberately
- * puts the store outside the working directory. The agent directory is carved
- * back out even when it falls inside one of them: nothing the model writes
- * belongs next to the credential.
+ * Reads reach those plus btrix's own installed files, so the skills can read
+ * their own reference docs.
  */
-export function refuseWrite(scope: Scope, raw: string): string | undefined {
+function readRoots(scope: Scope): string[] {
+  return [scope.cwd, scope.storeRoot, scope.packageRoot];
+}
+
+/**
+ * The one boundary, for both tools: inside a listed root, or refused.
+ *
+ * Default deny rather than a list of forbidden places. A deny-list only covers
+ * what someone thought of -- ~/.ssh and ~/.aws are easy to name, ~/.config for
+ * some tool nobody here has heard of is not -- and it has to be maintained
+ * forever. This way the unknown cases are handled by not being listed, which
+ * is the direction that fails safe.
+ *
+ * The agent directory is subtracted even though it is normally outside all of
+ * these, because BTRIX_AGENT_DIR can put it inside one.
+ */
+function refuse(scope: Scope, raw: string, roots: string[], verb: string): string | undefined {
   if (!raw.trim()) return "no path given";
   const target = resolveForCheck(scope.cwd, raw);
 
   if (within(scope.agentDir, target)) {
     return `${raw} is inside btrix's own agent directory (${scope.agentDir}), which holds the model credential.`;
   }
-  if (within(scope.cwd, target) || within(scope.storeRoot, target)) return undefined;
+  if (roots.some((root) => within(root, target))) return undefined;
 
   return (
-    `${raw} resolves to ${target}, outside both the working directory (${scope.cwd}) ` +
-    `and the btrix store (${scope.storeRoot}). Ask the user to make this edit.`
+    `${raw} resolves to ${target}, which btrix cannot ${verb}: it is outside the working directory ` +
+    `(${scope.cwd}) and the btrix store (${scope.storeRoot}). If the user wants it used, ask them to ` +
+    `copy it in or paste the contents.`
   );
 }
 
-export type ReadVerdict =
-  | { kind: "allow" }
-  | { kind: "deny"; reason: string }
-  | { kind: "ask"; reason: string };
+/** Why this write should be refused, or undefined if it is fine. */
+export function refuseWrite(scope: Scope, raw: string): string | undefined {
+  return refuse(scope, raw, writeRoots(scope), "write");
+}
 
-/**
- * What to do with a read.
- *
- * Writes get a straight yes or no, because the places a write belongs are
- * few and known. Reads are broader -- crawler output, files around the
- * project, the skills' own reference docs -- so a hard scope would either
- * break real work or be so wide as to mean nothing. Three tiers instead:
- * allowed where the job happens, refused outright for credential stores, and
- * a question for everything else.
- */
-export function judgeRead(scope: Scope, raw: string): ReadVerdict {
-  if (!raw.trim()) return { kind: "allow" };
-  const target = resolveForCheck(scope.cwd, raw);
-
-  if (within(scope.agentDir, target)) {
-    return {
-      kind: "deny",
-      reason: `${raw} is inside btrix's own agent directory (${scope.agentDir}), which holds the model credential.`,
-    };
-  }
-  if (isCredentialPath(scope, target)) {
-    return { kind: "deny", reason: `${raw} is a credential store, which btrix will not read.` };
-  }
-  if (
-    within(scope.cwd, target) ||
-    within(scope.storeRoot, target) ||
-    within(scope.packageRoot, target)
-  ) {
-    return { kind: "allow" };
-  }
-  return {
-    kind: "ask",
-    reason: `${raw} resolves to ${target}, outside the working directory, the btrix store and btrix's own files.`,
-  };
+/** Why this read should be refused, or undefined if it is fine. */
+export function refuseRead(scope: Scope, raw: string): string | undefined {
+  return refuse(scope, raw, readRoots(scope), "read");
 }
