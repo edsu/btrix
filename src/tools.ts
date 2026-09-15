@@ -727,8 +727,9 @@ export function createTools(
     label: "Reclaim space",
     description:
       "Report, and optionally delete, the working directories left behind by finished and failed crawls. " +
-      "Never touches archives, configs or profiles. Reports by default: call again with remove set to true " +
-      "only after the user has seen the list and agreed.",
+      "Never touches archives, configs or profiles — including a wacz still sitting in a run directory " +
+      "because the session ended before the crawl did. Reports by default. With remove set, btrix asks " +
+      "the user to confirm the exact list before anything is deleted, so show them the report first.",
     promptSnippet: "Reclaim space from old crawl working directories",
     parameters: Type.Object({
       // Plain string rather than an enum: the enum helper lives in a package
@@ -740,7 +741,7 @@ export function createTools(
       olderThanDays: Type.Optional(Type.Number({ description: "Only consider directories older than this" })),
       remove: Type.Optional(Type.Boolean({ description: "Actually delete. Defaults to false: report only." })),
     }),
-    async execute(_id, params) {
+    async execute(_id, params, _signal, _onUpdate, ctx) {
       const store = getStore();
       const asked = params.what ? String(params.what) : "failed";
       if (!["failed", "runs", "both"].includes(asked)) {
@@ -775,6 +776,19 @@ export function createTools(
           ],
           details: plan,
         };
+      }
+
+      // Asked here rather than in a tool_call gate so there is exactly one
+      // plan: the gate would have to compute its own, and then the list shown
+      // is not provably the list deleted. This is the only thing in btrix that
+      // deletes, so the description telling the model to ask first is not
+      // enough on its own.
+      if (ctx?.hasUI) {
+        const ok = await ctx.ui.confirm(
+          `Delete ${plan.candidates.length} directory(ies), freeing ${humanBytes(plan.totalBytes)}?`,
+          `${listing}\n\nThis cannot be undone.`,
+        );
+        if (!ok) return text("Left alone — nothing was deleted.");
       }
 
       const { removed, refused, bytes } = await applyClean(store, plan);

@@ -35,6 +35,39 @@ export interface CleanPlan {
 
 const DAY = 24 * 60 * 60 * 1000;
 
+/**
+ * Whether a run directory still holds the only copy of an archive.
+ *
+ * finishRun promotes a WACZ into out/ when the monitor sees the crawl finish,
+ * and crawls are detached on purpose -- so quitting btrix before one ends
+ * leaves the WACZ in the run directory with nothing to move it. readArchives
+ * only scans out/, so btrix_list and btrix_view cannot see it either, and its
+ * config is not running any more, which is the only thing the live check
+ * looks at. Without this it reads as reclaimable space.
+ */
+function holdsArchive(dir: string): boolean {
+  let stack = [dir];
+  // Bounded: a WACZ lives at collections/<coll>/, and the warc fallback one
+  // level deeper. Walking the whole tree would stat every captured page.
+  for (let depth = 0; depth < 5 && stack.length; depth++) {
+    const next: string[] = [];
+    for (const at of stack) {
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(at, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const e of entries) {
+        if (e.isFile() && (e.name.endsWith(".wacz") || e.name.endsWith(".warc.gz"))) return true;
+        if (e.isDirectory()) next.push(path.join(at, e.name));
+      }
+    }
+    stack = next;
+  }
+  return false;
+}
+
 async function scan(dir: string, kind: Candidate["kind"], now: number): Promise<Candidate[]> {
   let entries: fs.Dirent[];
   try {
@@ -84,6 +117,10 @@ export async function planClean(
     // Deleting the directory a container is writing into would break the crawl.
     if (c.config && live.has(c.config)) {
       kept.push({ ...c, keptBecause: `${c.config} is crawling right now` });
+    } else if (holdsArchive(c.path)) {
+      // The tool's description promises archives are never touched. An
+      // un-promoted WACZ is an archive, wherever it happens to be sitting.
+      kept.push({ ...c, keptBecause: `${path.basename(c.path)} still holds an archive` });
     } else if (c.ageDays < minAge) {
       kept.push({ ...c, keptBecause: `only ${c.ageDays} day(s) old` });
     } else {
