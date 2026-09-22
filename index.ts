@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { Box, Text } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { finishRun, type Outcome } from "./src/finish.ts";
+import { statsFor, sweepStranded } from "./src/sweep.ts";
 import { ScratchBrowser, VNC_PORT } from "./src/browser.ts";
 import { CrawlMonitor, type WatchTarget } from "./src/monitor.ts";
 import { notifyDesktop } from "./src/notify.ts";
@@ -29,7 +30,7 @@ import { activeRun, collectionFor, legacyRoot, resolveStore, type Store } from "
 import { applyNameCompletion, filterSuggestions, nameSuggestions, tokenBeforeCursor } from "./src/complete.ts";
 import { readConfig } from "./src/config.ts";
 import { confirmCrawl, isOpenEnded } from "./src/confirm.ts";
-import { engineStatus } from "./src/engine.ts";
+import { crawlLookup, engineStatus } from "./src/engine.ts";
 import { firstRunPanel, modelLabel, probeAuth, readyHeader } from "./src/firstrun.ts";
 import { buildInventory } from "./src/inventory.ts";
 import { listProfiles } from "./src/profile.ts";
@@ -312,6 +313,15 @@ export default function (pi: ExtensionAPI) {
     const adopted = await monitor.adoptRunning(targetFor);
     if (adopted.length) await monitor.tick();
 
+    // Crawls are detached, so one that finished while btrix was closed was
+    // never seen to finish and never promoted. Sweep those before the banner
+    // inventory is built, or the first thing the session shows is a store
+    // missing archives that are sitting in runs/.
+    const swept = await sweepStranded(store, {
+      lookup: crawlLookup,
+      finish: async (run) => finishRun(store, run, await statsFor(run)),
+    });
+
     if (ctx.hasUI) {
       // Complete crawl names on `@`, from the inventory. Rebuilt per query
       // rather than cached: a crawl finishing changes what the names mean.
@@ -348,6 +358,7 @@ export default function (pi: ExtensionAPI) {
           engine,
           model: readyHeader(auth, store.root)[1],
           adopted: adopted.map((t) => t.config),
+          promoted: swept.promoted.flatMap((o) => (o.kind === "promoted" && o.dest ? [path.basename(o.dest)] : [])),
           unicode: supportsUnicode(),
           wordmark,
         },

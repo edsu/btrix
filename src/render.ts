@@ -397,6 +397,8 @@ export interface StartupInfo {
   engine: { usable: boolean; bin?: string; problem?: string };
   model?: string;
   adopted: string[];
+  /** Collections promoted at startup because they finished with btrix closed. */
+  promoted?: string[];
   /** Whether box-drawing characters will render. Defaults to assuming yes. */
   unicode?: boolean;
   /** Pre-coloured wordmark lines. Defaults to the uncoloured wordmark. */
@@ -552,6 +554,19 @@ export function startupLines(info: StartupInfo, theme: ThemeLike = plainTheme): 
   if (overview.length) {
     lines.push("");
     lines.push(...overview);
+  }
+
+  // Not a warning: nothing went wrong, but an archive appearing in out/ that
+  // the user never saw finish deserves a sentence rather than silence.
+  if (info.promoted?.length) {
+    lines.push("");
+    lines.push(
+      "  " +
+        theme.fg(
+          "text",
+          `${plural(info.promoted.length, "archive")} finished while btrix was closed, now in out/ — ${info.promoted.join(", ")}`,
+        ),
+    );
   }
 
   const warnings: string[] = [];

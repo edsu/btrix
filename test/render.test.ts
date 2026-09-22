@@ -145,6 +145,16 @@ describe("startupLines", () => {
   const banner = (over: Record<string, any> = {}, invOver: Record<string, any> = {}) =>
     startupLines({ inv: inv(invOver), engine: { usable: true }, adopted: [], ...over }, plainTheme).join("\n");
 
+  it("reports archives the startup sweep promoted, and stays quiet otherwise", () => {
+    // A crawl that finished while btrix was closed appears in out/ without the
+    // user ever seeing it finish, so the banner says so rather than letting an
+    // archive turn up unexplained.
+    expect(banner({ promoted: ["stanford-news.wacz"] })).toContain(
+      "1 archive finished while btrix was closed, now in out/ — stanford-news.wacz",
+    );
+    expect(banner()).not.toContain("while btrix was closed");
+  });
+
   it("greets, and says what this is", () => {
     const out = banner({ model: "store /w/btrix · anthropic/claude-opus-5" });
     expect(out).toContain("btrix");
