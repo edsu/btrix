@@ -44,6 +44,31 @@ describe("CrawlMonitor", () => {
     expect(onComplete).not.toHaveBeenCalled();
   });
 
+  it("adopts from a crawl list handed in, without asking the engine again", async () => {
+    // Startup needs the same `docker ps` answer twice -- once to adopt live
+    // crawls, once to decide which finished runs the sweep may promote -- and
+    // on a cold daemon each call is seconds. Passing the list in is what makes
+    // that one call. Nothing is actually running here, so an adoption can only
+    // have come from the list.
+    writeLog([{ context: "crawlStatus", message: "Crawl statistics", details: { crawled: 1, total: 4 } }]);
+    monitor = new CrawlMonitor({});
+
+    const adopted = await monitor.adoptRunning(
+      (config) => (config === "inkdroid" ? target() : undefined),
+      [{ id: "abc123", config: "inkdroid" }],
+    );
+
+    expect(adopted.map((t) => t.config)).toEqual(["inkdroid"]);
+    expect(monitor.watched().map((t) => t.config)).toEqual(["inkdroid"]);
+  });
+
+  it("still asks the engine when no list is handed in", async () => {
+    // The /btrix command has no lookup of its own to share, so the old path
+    // has to keep working. Nothing is running, so this adopts nothing.
+    monitor = new CrawlMonitor({});
+    expect(await monitor.adoptRunning(() => target())).toEqual([]);
+  });
+
   it("drops a crawl from the loop once it settles, so it stops being repainted", async () => {
     writeLog([{ context: "crawlStatus", message: "Crawl statistics", details: { crawled: 2, total: 4 } }]);
     const ticks: CrawlStats[] = [];

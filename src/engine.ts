@@ -15,10 +15,32 @@ export const IMAGE = "webrecorder/browsertrix-crawler";
 
 let cached: string | undefined | null = null;
 
-/** Prefer podman, fall back to docker, matching the plugin's runner. */
-export async function engine(): Promise<string | undefined> {
+/** Forget the detected engine. For tests, which vary the environment. */
+export function resetEngineCache(): void {
+  cached = null;
+}
+
+/**
+ * Prefer podman, fall back to docker, matching the plugin's runner.
+ *
+ * `BTRIX_ENGINE` overrides the search the way `BTRIX_CHROME` overrides the
+ * browser one: a binary name uses that engine and nothing else, and `none`
+ * asserts there is no engine at all.
+ *
+ * `none` exists because detection is not free. Every container lookup shells
+ * out, and on a loaded CI runner a single `docker ps` takes seconds -- enough
+ * to push tests that only ever assert "nothing is running" past their timeout,
+ * intermittently and for no useful reason. Saying so up front is both faster
+ * and more honest than discovering it per call.
+ */
+export async function engine(env: NodeJS.ProcessEnv = process.env): Promise<string | undefined> {
   if (cached !== null) return cached ?? undefined;
-  for (const candidate of ["podman", "docker"]) {
+  const override = env.BTRIX_ENGINE?.trim();
+  if (override === "none") {
+    cached = undefined;
+    return undefined;
+  }
+  for (const candidate of override ? [override] : ["podman", "docker"]) {
     try {
       await exec(candidate, ["--version"], { timeout: 5_000 });
       cached = candidate;

@@ -32,8 +32,16 @@ jobs:
       - name: typecheck
         run: npm run check
 
+      # No container engine. Nothing here needs one -- the tests that touch the
+      # engine only assert "nothing is running" -- but ubuntu runners ship
+      # docker and podman, and a loaded one answers `docker ps` in seconds
+      # rather than milliseconds. That was enough to time out three tests at
+      # vitest's 5s default, intermittently. macOS runners have no engine at
+      # all, which is why that job was always the green one.
       - name: tests
         run: npm test
+        env:
+          BTRIX_ENGINE: none
 
       # The digests in vendor/replaywebpage/provenance.json are only worth
       # anything if something re-hashes them. Nothing did until this ran: the

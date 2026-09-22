@@ -5,7 +5,7 @@
  * a target, because each crawl attempt reads from its own run directory.
  */
 
-import { runningCrawls } from "./engine.ts";
+import { type RunningCrawl, runningCrawls } from "./engine.ts";
 import { CrawlTailer, type CrawlStats } from "./stats.ts";
 
 /** A crawl to watch: which collection, in which directory. */
@@ -100,11 +100,21 @@ export class CrawlMonitor {
     return new CrawlTailer(target.collection, target.root, target.config).read();
   }
 
-  /** Adopt crawler containers already running, using a caller-supplied
-   *  resolver since only the caller knows where the store is. */
-  async adoptRunning(resolve: (config: string) => WatchTarget | undefined): Promise<WatchTarget[]> {
+  /**
+   * Adopt crawler containers already running, using a caller-supplied
+   * resolver since only the caller knows where the store is.
+   *
+   * `crawls` lets a caller that has already asked the engine hand the answer
+   * over instead of provoking a second `ps`. Startup does: it needs the same
+   * list to decide which finished runs the promotion sweep may touch, and on
+   * a cold or loaded Docker a single `ps` is seconds rather than milliseconds.
+   */
+  async adoptRunning(
+    resolve: (config: string) => WatchTarget | undefined,
+    crawls?: readonly RunningCrawl[],
+  ): Promise<WatchTarget[]> {
     const adopted: WatchTarget[] = [];
-    for (const { config } of await runningCrawls()) {
+    for (const { config } of crawls ?? (await runningCrawls())) {
       if (!config) continue;
       const target = resolve(config);
       if (!target) continue;
