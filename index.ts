@@ -308,9 +308,14 @@ export default function (pi: ExtensionAPI) {
     store = resolveStore({ dir: typeof flag === "string" ? flag : undefined, cwd: ctx.cwd ?? cwd });
     legacy = legacyRoot(ctx.cwd ?? cwd);
 
+    // One engine call for both things startup needs it for. Asking twice cost
+    // a second `docker ps`, which is milliseconds on a warm daemon and seconds
+    // on a cold or loaded one -- enough to be felt at every start.
+    const live = await crawlLookup();
+
     // State lives on disk, not in the session: a crawl started in another
     // session, or by hand, is picked up here and gets a widget.
-    const adopted = await monitor.adoptRunning(targetFor);
+    const adopted = await monitor.adoptRunning(targetFor, live.crawls);
     if (adopted.length) await monitor.tick();
 
     // Crawls are detached, so one that finished while btrix was closed was
@@ -318,7 +323,7 @@ export default function (pi: ExtensionAPI) {
     // inventory is built, or the first thing the session shows is a store
     // missing archives that are sitting in runs/.
     const swept = await sweepStranded(store, {
-      lookup: crawlLookup,
+      lookup: async () => live,
       finish: async (run) => finishRun(store, run, await statsFor(run)),
     });
 
