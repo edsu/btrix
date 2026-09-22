@@ -383,7 +383,7 @@ a:hover{text-decoration-thickness:2px}
       </div>
 
       <div class="hero">
-        <p class="lede">btrix settles the scope with you, writes the crawl config, and runs Browsertrix Crawler in a container on your machine. What comes back is a WACZ file you can replay, keep, and hand to anyone.</p>
+        <p class="lede">btrix settles the scope with you, writes the crawl config, and runs <a href="https://webrecorder.net">Webrecorder</a>'s <a href="https://crawler.docs.browsertrix.com/">Browsertrix Crawler</a> in a container on your machine. What comes back is a WACZ file you can replay, keep, and hand to anyone.</p>
 
         <div class="install">
           <div class="install-row">
@@ -425,7 +425,8 @@ a:hover{text-decoration-thickness:2px}
       <div class="band-head">
         <p class="eyebrow">The exchange</p>
         <h2 class="h2">It runs on sentences, not flags.</h2>
-        <p class="note">Everything btrix does, it does because you asked for it in the terminal. There is no config syntax to learn first — though the config it writes is plain YAML, and yours to edit.</p>
+        <p class="note">Everything btrix does, it does because you asked for it
+        in the terminal. There is no config syntax to learn first, although the config it writes is plain YAML, and yours to edit.</p>
       </div>
 
       <div class="exchange">
@@ -473,7 +474,7 @@ a:hover{text-decoration-thickness:2px}
     <div class="wrap">
       <div class="band-head">
         <p class="eyebrow">Recorded</p>
-        <h2 class="h2">One session, start to finish.</h2>
+        <h2 class="h2">A brief demo</h2>
       </div>
 
       <figure class="frame">
@@ -493,24 +494,27 @@ a:hover{text-decoration-thickness:2px}
     <div class="wrap">
       <div class="band-head">
         <p class="eyebrow">On disk</p>
-        <h2 class="h2">Everything in one directory, beside your work.</h2>
+        <h2 class="h2">Everything is in one directory, beside your work.</h2>
       </div>
 
       <div class="disk">
         <pre class="tree" aria-label="The layout of a btrix store">./
 ├── <b>btrix/</b>
 │   ├── config/wikipedia.yaml         <i>your crawl configs</i>
+│   ├── config/behaviors/             <i>custom JavaScript behaviors</i>
 │   ├── out/web-archiving.wacz        <i>finished archives</i>
 │   ├── out/web-archiving.btrix.json  <i>how each was made</i>
 │   ├── profiles/                     <i>browser logins</i>
 │   ├── runs/                         <i>working files, kept</i>
 │   └── failed/                       <i>nothing came back</i>
-└── notes.md, .git/                   <i>your stuff, untouched</i></pre>
+└── notes.md, .git/                   <i>your other stuff</i></pre>
 
         <dl class="facts">
           <div class="fact">
-            <dt>Put it anywhere</dt>
-            <dd><code>btrix --dir /Volumes/archive/wikipedia</code> moves the whole store — useful for a large crawl on an external disk. The store writes its own <code>.gitignore</code>, so archives and profiles stay out of version control and <code>config/</code> stays yours to commit.</dd>
+            <dt>Work from anywhere</dt>
+            <dd><code>btrix --dir /Volumes/archive/wikipedia</code> moves the
+              whole store, which can be useful for a large crawl on an external
+              disk.</dd>
           </div>
           <div class="fact">
             <dt>Crawls outlive the session</dt>
@@ -522,7 +526,7 @@ a:hover{text-decoration-thickness:2px}
           </div>
           <div class="fact">
             <dt>Any model, including a local one</dt>
-            <dd><code>/login</code> connects a Claude, ChatGPT or Copilot subscription, or set an API key. Anything that speaks the OpenAI API works too — <a href="https://github.com/edsu/btrix#using-your-own-model-endpoint">LM Studio, Ollama, vLLM, llama.cpp, or your own LiteLLM gateway</a>.</dd>
+            <dd><code>/login</code> connects a Claude, ChatGPT or Copilot subscription, or set an API key. Anything that speaks the OpenAI API works too: <a href="https://github.com/edsu/btrix#using-your-own-model-endpoint">LM Studio, Ollama, vLLM, llama.cpp, or your own LiteLLM gateway</a>.</dd>
           </div>
         </dl>
       </div>
@@ -535,7 +539,7 @@ a:hover{text-decoration-thickness:2px}
   <div class="wrap colophon-in">
     <p class="colophon-mark">btrix<span>high-fidelity web archives</span><span>Browsertrix Crawler, driven by conversation</span></p>
     <div class="colophon-text">
-      <p><a href="https://github.com/webrecorder/browsertrix-crawler">Browsertrix Crawler</a> and the WACZ format are the work of <a href="https://webrecorder.net">Webrecorder</a>. btrix is only a front end — if it is useful to you, <a href="https://opencollective.com/webrecorder">support them</a>.</p>
+      <p><a href="https://github.com/webrecorder/browsertrix-crawler">Browsertrix Crawler</a> and the WACZ format are the work of <a href="https://webrecorder.net">Webrecorder</a>. btrix is only a front end, so if it is useful to you, please <a href="https://opencollective.com/webrecorder">support them</a>.</p>
       <ul class="colophon-meta">
         <li><a href="https://github.com/edsu/btrix">GitHub</a></li>
         <li><a href="https://www.npmjs.com/package/@edsu/btrix">npm</a></li>
