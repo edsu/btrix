@@ -1,9 +1,10 @@
 /**
  * Where the model is allowed to read and write.
  *
- * btrix hands the model pi's `read`, `write`, `edit` and `bash`, because
- * authoring a crawl config and a custom behavior is most of the job. Those
- * tools are not scoped to a directory, and pi ships no permission system, so
+ * btrix hands the model pi's `read`, `write`, `edit`, `ls`, `grep` and `find`,
+ * because authoring a crawl config and a custom behavior is most of the job.
+ * Those tools are not scoped to a directory, and pi ships no permission
+ * system, so
  * without a gate one model turn can read `~/.btrix/auth.json` or `~/.ssh/id_rsa`
  * or append a line to `~/.zshrc`. That matters more here than in a coding
  * agent: a crawl pulls in pages nobody vetted, and their titles and URLs reach
@@ -11,14 +12,52 @@
  *
  * Decisions here, enforcement in index.ts, so this stays testable without pi.
  *
- * Both tools share one boundary, and it is default deny: a path is inside a
- * root the job actually uses, or it is refused. `bash` is the exception, since
- * it cannot be scoped by reading the command -- see index.ts, which puts a
- * person in front of it instead.
+ * Every one of them shares one boundary, and it is default deny: a path is
+ * inside a root the job actually uses, or it is refused. `bash` is not granted
+ * at all (see toolnames.js), precisely because it cannot be scoped by reading
+ * the command -- so there is no shell here for this gate to have to cover.
  */
 
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** The spaces pi folds to ASCII before resolving. Kept identical on purpose. */
+const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
+
+/**
+ * Normalize a path the way pi's file tools do, before it is resolved.
+ *
+ * The gate and the tool have to agree on what a path *means*, and they did
+ * not. pi's tools resolve with `{ normalizeUnicodeSpaces: true,
+ * stripAtPrefix: true }`, which expands `~`, converts `file://` URLs, drops
+ * a leading `@` and folds
+ * unicode spaces. `path.resolve` does none of that, so `~/mbox` was checked as
+ * a literal directory named `~` inside the working directory -- which passed --
+ * and then opened by the tool as `$HOME/mbox`. Every root here was bypassable
+ * that way, the agent directory holding the model credential included.
+ *
+ * So this is not a convenience: a divergence between the two resolvers is a
+ * hole, and the only safe version of this function is the one that matches.
+ * Windows forms are left out because btrix is darwin and linux only.
+ */
+function normalizeLikePi(raw: string, home: string): string {
+  let value = raw.replace(UNICODE_SPACES, " ");
+  if (value.startsWith("@")) value = value.slice(1);
+  if (value === "~") return home;
+  if (value.startsWith("~/")) return path.join(home, value.slice(2));
+  if (/^file:\/\//.test(value)) {
+    try {
+      return fileURLToPath(value);
+    } catch {
+      // pi throws here too, so the tool opens nothing. Leaving it unresolved
+      // means it gets checked as a literal name, which is the safe direction.
+      return value;
+    }
+  }
+  return value;
+}
 
 /** Whether `target` is `root` itself or sits underneath it. */
 export function within(root: string, target: string): boolean {
@@ -37,8 +76,8 @@ export function within(root: string, target: string): boolean {
  * -- that is the normal case for a write -- so fall back to resolving the
  * nearest ancestor that does and re-attaching the remainder.
  */
-export function resolveForCheck(cwd: string, raw: string): string {
-  const abs = path.resolve(cwd, raw);
+export function resolveForCheck(cwd: string, raw: string, home: string = os.homedir()): string {
+  const abs = path.resolve(cwd, normalizeLikePi(raw, home));
   try {
     return fs.realpathSync(abs);
   } catch {
@@ -68,6 +107,11 @@ export interface Scope {
    * rather than in the user's directory.
    */
   packageRoot: string;
+  /**
+   * The home directory `~` expands to. Defaults to the real one; the tests set
+   * it so they can assert on `~/.ssh` without depending on the machine.
+   */
+  home?: string;
 }
 
 /**
@@ -99,7 +143,7 @@ function readRoots(scope: Scope): string[] {
  */
 function refuse(scope: Scope, raw: string, roots: string[], verb: string): string | undefined {
   if (!raw.trim()) return "no path given";
-  const target = resolveForCheck(scope.cwd, raw);
+  const target = resolveForCheck(scope.cwd, raw, scope.home);
 
   if (within(scope.agentDir, target)) {
     return `${raw} is inside btrix's own agent directory (${scope.agentDir}), which holds the model credential.`;
@@ -133,10 +177,20 @@ export function refuseSearch(scope: Scope, raw: string | undefined): string | un
 }
 
 /**
- * `grep` takes a glob and `find` takes a glob pattern, and both are expanded
- * after the path check has already happened -- so `../../**` would walk out of
- * a directory that passed. A `..` segment has no legitimate use in either here,
- * so it is refused rather than resolved.
+ * `grep` takes a glob and `find` takes a glob pattern.
+ *
+ * This once claimed the pattern is expanded after the path check and so
+ * `../../**` would walk out of a directory that passed. That is not what
+ * happens. Both tools hand the pattern to `fd`/`rg` as a filter applied while
+ * walking the search root, spawned without a shell, and neither follows a
+ * pattern out of that root: `../../**`, `~/**` and `/etc/**` all match nothing.
+ * Verified against both binaries rather than reasoned about, since the last
+ * thing this module assumed about path handling turned out to be wrong.
+ *
+ * So the boundary is `refuseSearch` on the path, not this. It is kept anyway:
+ * a pattern that cannot possibly match should be refused with a reason, rather
+ * than returning an empty result the model has to guess at. Defence in depth
+ * if a future tool does expand them.
  */
 export function refuseGlob(raw: string | undefined): string | undefined {
   if (raw === undefined || raw === "") return undefined;

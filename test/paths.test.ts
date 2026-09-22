@@ -26,18 +26,19 @@ beforeEach(() => {
   // realpath, because macOS puts mkdtemp under /var -> /private/var and the
   // symlink resolution in resolveForCheck would otherwise look like an escape.
   dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "btrix-paths-")));
+  // A stand-in home, so the cases below do not depend on the machine running
+  // the tests having (or not having) a real ~/.ssh.
+  home = path.join(dir, "home");
   scope = {
     cwd: path.join(dir, "work"),
     storeRoot: path.join(dir, "work", "btrix"),
     agentDir: path.join(dir, "agent"),
     packageRoot: path.join(dir, "pkg"),
+    home,
   };
   fs.mkdirSync(path.join(scope.storeRoot, "config"), { recursive: true });
   fs.mkdirSync(scope.agentDir, { recursive: true });
   fs.mkdirSync(path.join(scope.packageRoot, "skills"), { recursive: true });
-  // A stand-in home, so the cases below do not depend on the machine running
-  // the tests having (or not having) a real ~/.ssh.
-  home = path.join(dir, "home");
   fs.mkdirSync(home, { recursive: true });
 });
 
@@ -222,5 +223,63 @@ describe("refuseGlob", () => {
     // "..foo" is a filename, not a climb.
     expect(refuseGlob("..foo/*")).toBeUndefined();
     expect(refuseGlob(".env")).toBeUndefined();
+  });
+});
+
+/**
+ * The forms a model actually types, as opposed to the resolved paths the rest
+ * of this file constructs.
+ *
+ * This is where the gate leaked: it resolved with `path.resolve`, which treats
+ * `~` as a directory literally named "~", while pi's file tools expand it. So
+ * `~/.ssh/id_rsa` was checked as `<cwd>/~/.ssh/id_rsa`, passed for being inside
+ * the working directory, and was then opened as the real key. The suite missed
+ * it because every case above builds the path with `path.join(home, ...)` --
+ * the already-resolved form -- and never the raw string that does the damage.
+ */
+describe("path forms pi resolves and path.resolve does not", () => {
+  it("expands ~ the way the tool will", () => {
+    for (const raw of ["~/.ssh/id_rsa", "~/.zshrc", "~/mbox", "~"]) {
+      expect(refuseRead(scope, raw), raw).toMatch(/cannot read/);
+      expect(refuseWrite(scope, raw), raw).toMatch(/cannot write/);
+      expect(refuseSearch(scope, raw), raw).toMatch(/cannot search/);
+    }
+  });
+
+  it("does not let ~ reach the agent directory either", () => {
+    // The credential store is the point of the whole gate, and it was reachable
+    // as readily as anything else.
+    const agentScope: Scope = { ...scope, agentDir: path.join(home, ".btrix") };
+    expect(refuseRead(agentScope, "~/.btrix/auth.json")).toMatch(/agent directory/);
+    expect(refuseWrite(agentScope, "~/.btrix/auth.json")).toMatch(/agent directory/);
+  });
+
+  it("converts file:// URLs", () => {
+    expect(refuseRead(scope, `file://${path.join(home, ".ssh", "id_rsa")}`)).toMatch(/cannot read/);
+    expect(refuseRead(scope, "file:///etc/passwd")).toMatch(/cannot read/);
+  });
+
+  it("strips a leading @, which pi's tools also do", () => {
+    expect(refuseRead(scope, `@${path.join(home, ".ssh", "id_rsa")}`)).toMatch(/cannot read/);
+    expect(refuseRead(scope, "@~/.ssh/id_rsa")).toMatch(/cannot read/);
+  });
+
+  it("folds the unicode spaces pi folds, so both resolvers name the same file", () => {
+    // Fidelity, not containment: folding a space to a space cannot move a path
+    // across a root boundary, so this cannot be the hole. It keeps the refusal
+    // message naming the file the tool would actually have opened, which is
+    // the difference between a useful refusal and a confusing one.
+    const nbsp = path.join(scope.storeRoot, "config", `site\u00A0a.yaml`);
+    expect(resolveForCheck(scope.cwd, nbsp, home)).toBe(
+      path.join(scope.storeRoot, "config", "site a.yaml"),
+    );
+  });
+
+  it("still allows these forms when they point inside a root", () => {
+    // The fix must not turn the gate into a deny-list for tildes.
+    const inside = path.join(scope.storeRoot, "config", "site.yaml");
+    expect(refuseRead(scope, inside)).toBeUndefined();
+    expect(refuseRead(scope, `file://${inside}`)).toBeUndefined();
+    expect(refuseRead(scope, `@${inside}`)).toBeUndefined();
   });
 });

@@ -24,9 +24,9 @@ btrix
 
 On first run btrix asks you to connect a language model: type `/login` for a
 Claude, ChatGPT or Copilot subscription, or set an API key such as
-`ANTHROPIC_API_KEY`. Crawling itself needs no account, and a model running on
-your own machine works too — see [Using a local
-model](#using-a-local-model).
+`ANTHROPIC_API_KEY`. Crawling itself needs no account, and a model on your own
+machine or behind your own gateway works too — see [Using your own model
+endpoint](#using-your-own-model-endpoint).
 
 Your model credential and btrix's own preferences live in `~/.btrix`, kept
 apart from anything else on the machine. Point `BTRIX_AGENT_DIR` somewhere else
@@ -132,15 +132,59 @@ The browser noVNC runs on is published on loopback only, so the session you
 type a password into is reachable from your machine and nowhere else.
 
 Your model credential is a different thing, and lives in `~/.btrix`, which
-btrix creates `0700`. If you add a provider by hand (see below), the `apiKey`
-goes into `~/.btrix/models.json` in the clear — `chmod 600` it.
+btrix creates `0700`. `/login` writes it to `~/.btrix/auth.json` at mode `0600`.
+If you add a provider by hand (see below), prefer `/login` over an `apiKey`
+field, because `models.json` is written in the clear — `chmod 600` it if a real
+key ends up there anyway.
 
-## Using a local model
+## Using your own model endpoint
 
-btrix talks to whatever model the harness can reach, so a local server that
-speaks the OpenAI API works: LM Studio, Ollama, vLLM, llama.cpp. Declare it in
-`~/.btrix/models.json`. That is btrix's own agent directory, so this does not
-touch the configuration of anyone who also uses pi directly.
+btrix talks to whatever model the harness can reach, so anything that speaks the
+OpenAI API works: a server on your own machine — LM Studio, Ollama, vLLM,
+llama.cpp — or a hosted gateway such as LiteLLM, OpenRouter, Together or Groq.
+Both are the same mechanism. Declare the provider in `~/.btrix/models.json`.
+That is btrix's own agent directory, so this does not touch the configuration of
+anyone who also uses pi directly.
+
+First check the URL, because it is the easiest thing to get wrong and the
+failure is unhelpful:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://your-gateway.example.org/v1/models
+```
+
+A `401` means you are in the right place and need a key; on a keyless local
+server you get `200` and a list. HTML, a redirect to a sign-in page, or a
+certificate error means the API is not there — a portal or dashboard is a
+different hostname from the endpoint it issues keys for. A certificate error
+aborts before curl can tell you anything else, so open the host in a browser if
+you hit one.
+
+For a hosted gateway, declare it with no `apiKey` field:
+
+```json
+{
+  "providers": {
+    "litellm": {
+      "name": "LiteLLM",
+      "baseUrl": "https://your-gateway.example.org/v1",
+      "api": "openai-completions",
+      "models": [
+        { "id": "claude-sonnet-4-5", "input": ["text", "image"], "contextWindow": 200000 }
+      ]
+    }
+  }
+}
+```
+
+Start btrix, type `/login litellm`, and paste the key. Leaving `apiKey` out is
+what makes that work, and it puts the key in `~/.btrix/auth.json` at mode `0600`
+instead of in `models.json` in the clear — worth the extra step for a key that
+bills you. Then pick the model in `/model` and press Ctrl+S to make it the
+default, or start with `btrix --provider litellm --model claude-sonnet-4-5`.
+
+A local server is the same file with the key inlined, since there is no real key
+to protect:
 
 ```json
 {
@@ -161,30 +205,45 @@ touch the configuration of anyone who also uses pi directly.
 }
 ```
 
-`models.json` is written in the clear, so `chmod 600 ~/.btrix/models.json`
-once it holds a real key. The LM Studio example below does not, but the same
-shape is how you would add OpenRouter, Together, Groq or a hosted vLLM, and
-those keys are billable.
+That is the whole setup: no `/login`, and no credential file. The `apiKey` is a
+placeholder — LM Studio ignores it, but a provider with no auth at all is not
+offered as a model, so something has to be there.
 
-Then `btrix --provider lmstudio --model qwen/qwen3.8-27b`, or pick it in
-`/model` and press Ctrl+S to make it the default. That is the whole setup: no
-`/login`, and no credential file. The `apiKey` is a placeholder — LM Studio
-ignores it, but a provider with no auth at all is not offered as a model, so
-something has to be there.
+Things that are easy to get wrong:
 
-Four things that are easy to get wrong:
-
-- `curl -s localhost:1234/v1/models` gives the exact model ids. There is no
-  discovery: a model loaded in LM Studio has to be listed here too.
-- Set `contextWindow` to whatever you loaded the model at. Left out, it
-  defaults to 128K, and a server loaded at 8K will simply refuse.
-- `compat` is off for both fields above because most local servers do not
-  understand the `developer` role or `reasoning_effort`. Add
-  `"reasoning": true` to a model entry if the server reports thinking
+- **`compat` belongs to local servers, not gateways.** Both fields above are off
+  because most local servers do not understand the `developer` role or
+  `reasoning_effort`. A gateway handles both, and carrying this block across to
+  one will silently disable reasoning. Leave it out.
+- **`baseUrl` takes `/v1` for `openai-completions` but not for
+  `anthropic-messages`.** The Anthropic transport appends `/v1/messages` itself,
+  so give that one the bare root. Backwards, it is a 404 with nothing to explain
+  it.
+- **Model ids are exact, and there is no discovery.**
+  `curl -s -H "Authorization: Bearer $KEY" https://…/v1/models` lists them. On a
+  gateway they are aliases its administrator chose and need not match the
+  upstream names; a model loaded in LM Studio has to be listed here too.
+- **Set `contextWindow` to what the endpoint actually allows.** Left out it
+  defaults to 128K, and a server loaded at 8K will simply refuse. Add
+  `"reasoning": true` to a model entry if the endpoint reports thinking
   separately.
-- btrix is entirely tool-driven — ten crawl tools plus `read`, `write`, `edit`,
-  `ls`, `grep` and `find` — so pick a model with real tool-calling support. Small models
-  tend to manage single calls and then lose track across a longer job.
+- **Pick a model with real tool-calling support.** btrix is entirely tool-driven
+  — ten crawl tools plus `read`, `write`, `edit`, `ls`, `grep` and `find`. Small
+  models tend to manage single calls and then lose track across a longer job.
+
+If hand-listing ids gets tiresome, the pi ecosystem has provider extensions that
+discover them from the endpoint instead. `pi-provider-litellm` is the one for
+LiteLLM, and it also routes Claude models over the Anthropic transport so prompt
+caching works. Install it into btrix's directory rather than pi's:
+
+```bash
+PI_CODING_AGENT_DIR=~/.btrix pi install npm:pi-provider-litellm
+```
+
+It enables LiteLLM's MCP tools and skills-gateway prompt injection by default,
+which lets the proxy add tools and system-prompt text. Set
+`litellm.mcp.enabled` and `litellm.skills.enabled` to `false` in
+`~/.btrix/settings.json` unless you administer the proxy yourself.
 
 ## Writing a custom behavior
 
