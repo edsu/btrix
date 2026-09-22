@@ -139,6 +139,8 @@ environment
                            history live (default: ~/.btrix, mode 0700)
   BTRIX_CRAWLER_VERSION    browsertrix-crawler image tag (default: latest)
   BTRIX_CHROME             path to Chrome for the scratch browser
+  BTRIX_ENGINE             container engine to use (podman, docker), or
+                           "none" to skip detection entirely
 
 first run
   Type /login to connect a Claude, ChatGPT or Copilot subscription, or set an
