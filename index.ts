@@ -390,10 +390,11 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("tool_call", async (event, ctx) => {
-    // pi ships no permission system by design, and `write`, `edit` and `bash`
-    // are handed to the model so it can author configs and behaviors. Nothing
+    // pi ships no permission system by design, and `write` and `edit` are
+    // handed to the model so it can author configs and behaviors. Nothing
     // scopes them to this project, so scope them here: a crawl reads pages
-    // nobody vetted, and their titles reach the model as text.
+    // nobody vetted, and their titles reach the model as text. (`bash` is not
+    // granted at all -- see toolnames.js.)
     if (event.toolName === "write" || event.toolName === "edit") {
       const refusal = refuseWrite(scope(), String((event.input as { path?: unknown }).path ?? ""));
       return refusal ? { block: true, reason: refusal } : undefined;
