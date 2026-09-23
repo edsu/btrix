@@ -24,6 +24,13 @@ jobs:
         with:
           # engines says >=22.19. Testing the floor as well as current would be
           # better; this at least is not "whatever the runner had today".
+          #
+          # @types/node is held at ^22 to match, which is why `npm outdated`
+          # reports it as behind -- that is deliberate, not neglect. Typing
+          # against a newer Node than the floor lets a call that does not exist
+          # on 22.19 typecheck here and throw for whoever installed on the
+          # oldest supported Node, and this job would not catch it: it runs
+          # 22.19 but would be checking against the newer types.
           node-version: 22.19
           cache: npm
 
