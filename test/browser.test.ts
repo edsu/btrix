@@ -39,7 +39,9 @@ describe("ScratchBrowser", () => {
   it("names its container per process, so two sessions do not collide", () => {
     expect(browser.container).toBe(`btrix-browser-${process.pid}`);
     expect(browser.isRunning()).toBe(false);
-    expect(browser.vncUrl()).toBe("http://127.0.0.1:6080/");
+    // The profile UI, not the bare VNC websocket on 6080: that one answers an
+    // empty reply in a browser and carries no "Create Profile" button.
+    expect(browser.watchUrl()).toBe("http://127.0.0.1:9223/");
   });
 
   it("stopping when nothing runs is a no-op, not an error", async () => {

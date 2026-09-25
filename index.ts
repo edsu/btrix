@@ -13,18 +13,18 @@
 
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Box, Text } from "@earendil-works/pi-tui";
+import { Box, getCapabilities, Text } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { finishRun, type Outcome } from "./src/finish.ts";
 import { statsFor, sweepStranded } from "./src/sweep.ts";
-import { ScratchBrowser, VNC_PORT } from "./src/browser.ts";
+import { PROFILE_UI_PORT, ScratchBrowser } from "./src/browser.ts";
 import { CrawlMonitor, type WatchTarget } from "./src/monitor.ts";
 import { notifyDesktop } from "./src/notify.ts";
 import { isLive, renderForModel, renderInventory, renderWidget, startupLines, supportsUnicode } from "./src/render.ts";
 import { listArchiveFiles, ReplayServers } from "./src/serve.ts";
 import { linesComponent } from "./src/tui.ts";
 import { humanBytes } from "./src/sizes.ts";
-import type { CrawlStats } from "./src/stats.ts";
+import { screencastUrl, type CrawlStats } from "./src/stats.ts";
 import { wordmarkLines } from "./src/wordmark.ts";
 import { activeRun, collectionFor, legacyRoot, resolveStore, type Store } from "./src/store.ts";
 import { applyNameCompletion, filterSuggestions, nameSuggestions, tokenBeforeCursor } from "./src/complete.ts";
@@ -71,7 +71,9 @@ export default function (pi: ExtensionAPI) {
       const ctx = ctxRef;
       if (!ctx?.hasUI) return;
       ctx.ui.setWidget(widgetKey(target.config), () =>
-        linesComponent(renderWidget(stats, ctx.ui.theme), { overflow: "clip" }),
+        linesComponent(renderWidget(stats, ctx.ui.theme, { hyperlinks: getCapabilities().hyperlinks }), {
+          overflow: "clip",
+        }),
       );
 
       // Progress in the terminal title, so a long crawl is legible from a
@@ -235,11 +237,43 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("screencast", {
     description: "Open the live crawl screencast in your browser",
     handler: async (_args, ctx) => {
-      if (!monitor.watched().length) {
+      const watched = monitor.watched();
+      if (!watched.length) {
         ctx.ui.notify("No crawl is running.", "info");
         return;
       }
-      await openUrl("http://127.0.0.1:9037/");
+      // Each run's own port, rather than the template's 9037: a config that
+      // omits `screencastPort` has no screencast at all, and one that sets its
+      // own is served there.
+      //
+      // From the last tick rather than a fresh `stats()` -- that would run a
+      // `docker ps` and a `du` per crawl on a keypress, and re-read the logs
+      // alongside the tick that is already doing it.
+      //
+      // Gated on "crawling" for the same reason the widget is: the screencast
+      // is the browser's, so it stops answering once fetching is done, while
+      // the run stays watched through post-crawl and wacz generation.
+      const withCast: { config: string; url: string }[] = [];
+      for (const target of watched) {
+        const stats = monitor.lastStats(target);
+        if (stats?.state === "crawling" && stats.screencastPort) {
+          withCast.push({ config: target.config, url: screencastUrl(stats.screencastPort) });
+        }
+      }
+      if (!withCast.length) {
+        ctx.ui.notify(
+          "No crawl is fetching pages right now. A screencast needs `screencastPort: 9037` in the config, " +
+            "and only answers while the crawl is running.",
+          "info",
+        );
+        return;
+      }
+      const chosen =
+        withCast.length === 1
+          ? withCast[0]!.config
+          : await ctx.ui.select("Watch which crawl?", withCast.map((w) => w.config));
+      if (!chosen) return;
+      await openUrl(withCast.find((w) => w.config === chosen)!.url);
     },
   });
 
@@ -266,7 +300,9 @@ export default function (pi: ExtensionAPI) {
           await monitor.tick();
         } else if (ctx.hasUI) {
           ctx.ui.setWidget(widgetKey(target.config), () =>
-            linesComponent(renderWidget(stats, ctx.ui.theme), { overflow: "clip" }),
+            linesComponent(renderWidget(stats, ctx.ui.theme, { hyperlinks: getCapabilities().hyperlinks }), {
+          overflow: "clip",
+        }),
           );
         }
         return;
@@ -388,7 +424,7 @@ export default function (pi: ExtensionAPI) {
     const bits: string[] = [];
     const live = servers.running();
     if (live.length) bits.push(`replay :${live.map((s) => s.port).join(",")}`);
-    if (browser.runningKind() === "container") bits.push(`browser :${VNC_PORT}`);
+    if (browser.runningKind() === "container") bits.push(`browser :${PROFILE_UI_PORT}`);
     else if (browser.isRunning()) bits.push("browser (local)");
     ctx.ui.setStatus("btrix-replay", bits.length ? ctx.ui.theme.fg("dim", bits.join(" · ")) : undefined);
     return undefined;

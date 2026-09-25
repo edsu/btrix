@@ -22,9 +22,15 @@ btrix_profile https://example.org/login
 
 Then tell the user, in these words:
 
-1. Open <http://127.0.0.1:6080>.
+1. Open <http://127.0.0.1:9223>.
 2. Log in to the site in that window, completing any two-factor step.
-3. Use the on-screen control to save the profile.
+3. Click "Create Profile" on that page to save it.
+
+9223, not 6080. The crawler serves the profile UI — the browser in an iframe,
+plus the "Create Profile" button — on 9223. 6080 is the bare VNC websocket
+that iframe connects to, and returns an empty reply to a browser, so sending
+someone there shows them nothing and hides the only button that finishes the
+job.
 
 It lands in the store at `profiles/<name>.tar.gz`. Give the profile the site's
 name unless the user wants something else — one profile per site is the usual
@@ -45,11 +51,15 @@ the same regardless of where the store lives on disk.
 
 ## When the browser will not load
 
-- **Nothing at 127.0.0.1:6080** — the image may still be pulling on a first
+- **An empty reply** — check the port. 6080 answers exactly that way; the page
+  is on 9223.
+- **Nothing at 127.0.0.1:9223** — the image may still be pulling on a first
   run; that is a 2.4GB download. Check again after a minute.
 - **Port already in use** — another profile browser, or something else, holds
-  6080. `btrix_profile` refuses to start a second one; finish or stop the first.
-- **The page loads but is blank or frozen** — noVNC sometimes needs a reload.
+  9223 or 6080. `btrix_profile` refuses to start a second one; finish or stop
+  the first.
+- **The page loads but the browser pane is blank or frozen** — the iframe's
+  noVNC connection sometimes needs a reload.
 
 ## When a logged-in crawl captures login pages anyway
 

@@ -29,6 +29,14 @@ export interface ConfigSummary {
   generateWacz: boolean;
   /** `text: to-pages…`, which ReplayWeb.page needs for full-text search. */
   textToPages: boolean;
+  /**
+   * `screencastPort:`, the port the crawler serves the live screencast on.
+   *
+   * Undefined means there is no screencast to watch. The crawler's default is
+   * 0, which is its way of spelling "off", so a zero is normalized away here
+   * rather than left for every caller to remember.
+   */
+  screencastPort?: number;
 }
 
 function first(text: string, re: RegExp): string | undefined {
@@ -50,6 +58,8 @@ export function readConfig(path: string, name: string): ConfigSummary {
   const hops = first(text, /^\s*extraHops:\s*(\d+)/m);
   const generate = first(text, /^\s*generateWACZ:\s*(\S+)/m);
   const textOpt = first(text, /^\s*text:\s*(\S+)/m);
+  const screencast = first(text, /^\s*screencastPort:\s*(\d+)/m);
+  const screencastPort = screencast ? Number.parseInt(screencast, 10) : 0;
 
   return {
     name,
@@ -64,5 +74,6 @@ export function readConfig(path: string, name: string): ConfigSummary {
     // sets it; absent means "no wacz will appear", which list must not hide.
     generateWacz: generate === "true",
     textToPages: !!textOpt?.includes("to-pages"),
+    screencastPort: screencastPort > 0 ? screencastPort : undefined,
   };
 }

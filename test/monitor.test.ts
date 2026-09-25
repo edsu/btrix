@@ -123,6 +123,28 @@ describe("CrawlMonitor", () => {
     expect(monitor.watched()).toHaveLength(1);
   });
 
+  it("hands back the last tick's reading without provoking another", async () => {
+    writeLog([{ context: "crawlStatus", message: "Crawl statistics", details: { crawled: 4, total: 9 } }]);
+    monitor = new CrawlMonitor({ intervalMs: 10_000 });
+
+    // Nothing observed yet, so there is nothing to hand back.
+    monitor.watch(target());
+    expect(monitor.lastStats(target())).toBeUndefined();
+
+    await monitor.tick();
+    expect(monitor.lastStats(target())?.crawled).toBe(4);
+
+    // A second call must not re-read the log: `foldLine` accumulates, so a
+    // duplicate pass would double cumulative counters. Same object, untouched.
+    const first = monitor.lastStats(target());
+    expect(monitor.lastStats(target())).toBe(first);
+
+    // Unknown target, and a target whose run directory has moved, get nothing
+    // rather than another crawl's numbers.
+    expect(monitor.lastStats({ config: "other", collection: "other", root: dir })).toBeUndefined();
+    expect(monitor.lastStats({ ...target(), root: "/elsewhere" })).toBeUndefined();
+  });
+
   it("reads without following, so a status check cannot resurrect a finished crawl", async () => {
     writeLog([{ context: "crawlStatus", message: "Crawl statistics", details: { crawled: 4, total: 4 } }]);
     monitor = new CrawlMonitor();
