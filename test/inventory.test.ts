@@ -67,6 +67,20 @@ describe("readConfig", () => {
     });
   });
 
+  it("reads screencastPort, and treats the crawler's 0 as no screencast", () => {
+    const write = (name: string, body: string) => {
+      const f = path.join(dir, `${name}.yaml`);
+      fs.writeFileSync(f, body);
+      return readConfig(f, name);
+    };
+    expect(write("on", "screencastPort: 9037\n").screencastPort).toBe(9037);
+    expect(write("custom", "screencastPort: 9999\n").screencastPort).toBe(9999);
+    // 0 is how the crawler spells "off", so it must not read as a real port.
+    expect(write("off", "screencastPort: 0\n").screencastPort).toBeUndefined();
+    expect(write("absent", "collection: x\n").screencastPort).toBeUndefined();
+    expect(write("commented", "# screencastPort: 9037\n").screencastPort).toBeUndefined();
+  });
+
   it("treats a missing generateWACZ as no wacz, since that is what happens", () => {
     const f = path.join(dir, "plain.yaml");
     fs.writeFileSync(f, "seeds:\n  - url: https://example.com/\n");

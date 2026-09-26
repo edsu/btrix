@@ -131,8 +131,11 @@ exist, what does it match, does clicking it actually add items, and how many
 per click. `console.log` from evaluated code comes back too, which is the same
 channel a behavior reports on.
 
-`btrix_browser use=crawler` opens the container's browser instead, watched over
-noVNC at <http://127.0.0.1:6080>. That one *is* the browser the crawler runs —
+`btrix_browser use=crawler` opens the container's browser instead, watched at
+<http://127.0.0.1:9223> (the page embedding noVNC; 6080 is the websocket behind
+it and shows nothing on its own). Ignore the "Create Profile" button on that
+page: the scratch browser borrows `create-login-profile`, so pressing it ends
+the container. That one *is* the browser the crawler runs —
 same build, same flags — so it is what to reach for when a selector works
 locally and the crawl still misses pages.
 

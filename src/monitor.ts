@@ -34,6 +34,8 @@ interface Entry {
   /** Consecutive ticks that positively observed no container. */
   absent: number;
   settled: boolean;
+  /** The most recent tick's reading, for callers that must not provoke one. */
+  last?: CrawlStats;
 }
 
 const TERMINAL = new Set<CrawlStats["state"]>(["done", "stopped"]);
@@ -91,6 +93,20 @@ export class CrawlMonitor {
 
   watched(): WatchTarget[] {
     return [...this.entries.values()].map((e) => e.target);
+  }
+
+  /**
+   * The last reading the poll loop took, or undefined before the first tick.
+   *
+   * For callers reacting to a keypress. `stats()` on a watched crawl runs the
+   * tailer again -- a `docker ps` and a `du` per crawl, and a second pass over
+   * the log bytes that races the tick's own `ingest()` outside its `ticking`
+   * guard, double-counting into cumulative facts like `warnings`. Nothing that
+   * only wants to know what is on screen should pay that.
+   */
+  lastStats(target: WatchTarget): CrawlStats | undefined {
+    const existing = this.entries.get(target.config);
+    return existing && existing.target.root === target.root ? existing.last : undefined;
   }
 
   /** One-shot reading, without starting the poll loop. */
@@ -155,6 +171,7 @@ export class CrawlMonitor {
         } catch {
           continue;
         }
+        e.last = stats;
         if (!TERMINAL.has(stats.state) || stats.containerRunning) e.sawLive = true;
         this.opts.onTick?.(stats, e.target);
 
