@@ -524,8 +524,9 @@ is version-sensitive — test against your own crawler / ReplayWeb.page versions
 
 **Profiles & logins**
 
-- Create interactively: `create-login-profile --url …` (browser on port 6080),
-  log in, get a `profile.tar.gz`, then crawl with `profile:`. Create the profile
+- Create interactively: `create-login-profile --url …` (open the UI on port
+  9223; 6080 is the VNC websocket it embeds), log in, click "Create Profile" to
+  get a `profile.tar.gz`, then crawl with `profile:`. Create the profile
   the **same way you crawl** (e.g. both `--headless`) ([docs](https://crawler.docs.browsertrix.com/user-guide/browser-profiles/)).
 - A replay that shows only a login popup usually means the session **expired at
   crawl time** — refresh the profile and re-crawl

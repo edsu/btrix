@@ -37,7 +37,7 @@ import {
   renderWidget,
   reviewForModel,
 } from "./render.ts";
-import type { ScratchBrowser } from "./browser.ts";
+import { PROFILE_UI_PORT, VNC_WEBSOCKET_PORT, type ScratchBrowser } from "./browser.ts";
 import { bundleAvailable, vendorHint, type ReplayServers } from "./serve.ts";
 import { linesComponent } from "./tui.ts";
 import { humanBytes } from "./sizes.ts";
@@ -82,6 +82,48 @@ export function normalizeName(raw: string): string {
 export function safeConfigName(raw: string): string | undefined {
   const name = normalizeName(raw);
   return isSafeStoreName(name) ? name : undefined;
+}
+
+/**
+ * The steps handed to the person doing the login.
+ *
+ * Pulled out of the tool so it can be tested without starting a container:
+ * the step that mattered was wrong for a long time precisely because nothing
+ * could assert on it.
+ */
+export function profileInstructions(o: {
+  /** Whether the browser answered before the tool gave up waiting. */
+  up: boolean;
+  host: string;
+  name: string;
+  target: string;
+  replacing: boolean;
+}): string {
+  return [
+    o.up
+      ? `A browser is running for ${o.host}. Hand these steps to the user:`
+      : `The profile browser is starting for ${o.host} (it may still be pulling the image). Hand these steps to the user:`,
+    "",
+    // 9223, not 6080. 6080 is the VNC websocket the page's iframe talks to and
+    // answers a browser with an empty reply; the "Create Profile" button that
+    // writes the tarball only exists on the page served from 9223.
+    `  1. Open http://127.0.0.1:${PROFILE_UI_PORT} in your browser.`,
+    "  2. Log in to the site yourself, in that window. Complete any two-factor step.",
+    '  3. Click "Create Profile" on that page to save it.',
+    "",
+    `It will be written to ${o.target}.`,
+    `Then add this to the crawl config:  profile: ${CONTAINER_PROFILES}/${o.name}.tar.gz`,
+    "",
+    "Do not type the user's password for them and do not ask for it — they enter it in that browser.",
+    "The profile contains session cookies, so it is a credential: the store's .gitignore keeps it out of",
+    "version control, and it should not be shared or copied between machines.",
+    // Spread rather than a falsy entry plus `.filter(Boolean)`: that filter
+    // also ate the "" separators above, running the whole thing together into
+    // one block of prose. These steps are relayed to the user verbatim.
+    ...(o.replacing
+      ? ["", `Note: a profile called ${o.name} already exists and will be replaced when this one is saved.`]
+      : []),
+  ].join("\n");
 }
 
 export function configPath(store: Store, name: string): string | undefined {
@@ -647,7 +689,8 @@ export function createTools(
       const inFlight = await runningProfileCaptures();
       if (inFlight.length) {
         return text(
-          `A profile browser is already running (port 6080 is in use by it). Finish or stop that one first` +
+          `A profile browser is already running, holding ports ${PROFILE_UI_PORT} and ${VNC_WEBSOCKET_PORT}. ` +
+            `Finish or stop that one first` +
             (inFlight[0]?.filename ? `: it is capturing "${inFlight[0].filename}".` : "."),
         );
       }
@@ -694,25 +737,7 @@ export function createTools(
       }
 
       const target = path.join(store.profilesDir, `${name}.tar.gz`);
-      const instructions = [
-        up
-          ? `A browser is running for ${url.host}. Hand these steps to the user:`
-          : `The profile browser is starting for ${url.host} (it may still be pulling the image). Hand these steps to the user:`,
-        "",
-        "  1. Open http://127.0.0.1:6080 in your browser.",
-        "  2. Log in to the site yourself, in that window. Complete any two-factor step.",
-        "  3. Use the on-screen control to save the profile.",
-        "",
-        `It will be written to ${target}.`,
-        `Then add this to the crawl config:  profile: ${CONTAINER_PROFILES}/${name}.tar.gz`,
-        "",
-        "Do not type the user's password for them and do not ask for it — they enter it in that browser.",
-        "The profile contains session cookies, so it is a credential: the store's .gitignore keeps it out of",
-        "version control, and it should not be shared or copied between machines.",
-        already ? `\nNote: a profile called ${name} already exists and will be replaced when this one is saved.` : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
+      const instructions = profileInstructions({ up, host: url.host, name, target, replacing: !!already });
 
       return { content: [{ type: "text", text: instructions }], details: { name, target, url: url.toString() } };
     },
@@ -868,7 +893,7 @@ export function createTools(
           return text("No scratch browser is running. Call btrix_browser with a url to start one.");
         }
         const info = await browser.info();
-        const where = browser.runningKind() === "container" ? ` Watch it at ${browser.vncUrl()}` : "";
+        const where = browser.runningKind() === "container" ? ` Watch it at ${browser.watchUrl()}` : "";
         return info.ok
           ? text(`The ${browser.runningKind()} browser has ${info.url} open ("${info.title}").${where}`)
           : text(`The scratch browser is not answering: ${info.error}`);
@@ -907,7 +932,13 @@ export function createTools(
         return text(`Could not open the ${kind} browser: ${opened.error}${alternative}`);
       }
 
-      const watch = opened.vnc ? ` Watch and click it at ${opened.vnc}` : " It is open in a window on your desktop.";
+      // The scratch browser borrows create-login-profile, so the page it is
+      // watched on carries that command's "Create Profile" button. Pressing it
+      // writes the throwaway profile and ends the container, while this side
+      // still believes a browser is running -- so say not to.
+      const watch = opened.watch
+        ? ` Watch and click it at ${opened.watch} (ignore its "Create Profile" button, which would close the browser)`
+        : " It is open in a window on your desktop.";
       return {
         content: [
           {
@@ -917,7 +948,7 @@ export function createTools(
               "Use btrix_eval to try selectors and interaction code against this page.",
           },
         ],
-        details: { url: opened.url, title: opened.title, kind: opened.kind, vnc: opened.vnc },
+        details: { url: opened.url, title: opened.title, kind: opened.kind, watch: opened.watch },
       };
     },
   });

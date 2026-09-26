@@ -34,6 +34,27 @@ afterEach(() => {
 });
 
 describe("CrawlTailer", () => {
+  it("takes the screencast port from the run's own copy of the config", async () => {
+    fs.writeFileSync(logFile(), statusLine(2, 10, "2026-09-13T00:00:00.000Z"));
+    fs.mkdirSync(path.join(dir, "config"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "config", "mycfg.yaml"), "collection: sample\nscreencastPort: 9999\n");
+
+    // The run directory's copy, not the store's live config: that copy is what
+    // the running crawler was actually given.
+    expect((await new CrawlTailer(NAME, dir, "mycfg").read(1_000_000)).screencastPort).toBe(9999);
+  });
+
+  it("offers no screencast port when the run did not enable one", async () => {
+    fs.writeFileSync(logFile(), statusLine(2, 10, "2026-09-13T00:00:00.000Z"));
+    fs.mkdirSync(path.join(dir, "config"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "config", "mycfg.yaml"), "collection: sample\n");
+    expect((await new CrawlTailer(NAME, dir, "mycfg").read(1_000_000)).screencastPort).toBeUndefined();
+
+    // A legacy or hand-run directory has no config name at all, so there is
+    // nothing to look up and nothing to offer.
+    expect((await new CrawlTailer(NAME, dir).read(1_000_000)).screencastPort).toBeUndefined();
+  });
+
   it("accumulates across reads and only consumes appended bytes", async () => {
     fs.writeFileSync(logFile(), statusLine(2, 10, "2026-09-13T00:00:00.000Z"));
     const tailer = new CrawlTailer(NAME, dir);

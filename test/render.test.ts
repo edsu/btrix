@@ -1,3 +1,4 @@
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import {
   nextStepHint,
@@ -26,6 +27,7 @@ const stats = (over: Partial<CrawlStats> = {}): CrawlStats => ({
   warnings: 0,
   errors: 0,
   pending: [],
+  screencastPort: 9037,
   bytes: { archive: 880 * 1024 ** 2 },
   free: 12 * 1024 ** 3,
   discovering: false,
@@ -84,6 +86,42 @@ describe("renderWidget", () => {
     expect(renderWidget(stats({ state: "done", containerRunning: false }), plainTheme).join("\n")).not.toContain(
       "screencast",
     );
+  });
+
+  it("offers no screencast when the run did not enable one", () => {
+    // The hint used to be unconditional, which pointed at a dead port for
+    // every config that leaves `screencastPort` out.
+    const out = renderWidget(stats({ screencastPort: undefined }), plainTheme).join("\n");
+    expect(out).not.toContain("screencast");
+    expect(out).toContain("crawling");
+  });
+
+  it("reports the port the run actually used, not the template's", () => {
+    expect(renderWidget(stats({ screencastPort: 9999 }), plainTheme).join("\n")).toContain("screencast :9999");
+  });
+
+  it("makes the screencast hint an OSC 8 link to the loopback screencast", () => {
+    const line = renderWidget(stats({ screencastPort: 9999 }), plainTheme, { hyperlinks: true }).join("\n");
+    // Opening sequence carries the url, and the link is closed again, or every
+    // later cell on the row stays clickable.
+    expect(line).toContain(`\u001b]8;;http://127.0.0.1:9999/\u001b\\`);
+    expect(line).toContain(`screencast :9999\u001b]8;;\u001b\\`);
+  });
+
+  it("emits no escape sequences when the terminal will not honour them", () => {
+    // screen, non-forwarding tmux, and `terminal.hyperlinks: false` all reach
+    // here; the port must still be readable so /screencast remains usable.
+    const plain = renderWidget(stats({ screencastPort: 9037 }), plainTheme).join("\n");
+    expect(plain).toContain("screencast :9037");
+    expect(plain).not.toContain("\u001b]8;;");
+  });
+
+  it("keeps the link zero-width, so the clipped widget still fits", () => {
+    const linked = renderWidget(stats({ screencastPort: 9037 }), plainTheme, { hyperlinks: true }).join("\n");
+    const plain = renderWidget(stats({ screencastPort: undefined }), plainTheme).join("\n");
+    // The escape sequences occupy no columns: the linked line is longer in
+    // characters but no wider on screen than its label makes it.
+    expect(visibleWidth(linked)).toBe(visibleWidth(plain) + " · screencast :9037".length);
   });
 });
 

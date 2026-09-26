@@ -9,11 +9,18 @@
 # filename points into the container's own /tmp and is never saved, so nothing
 # is written to the store: this is a scratch browser, not a profile capture.
 #
-# noVNC is published on 6080, bound to 127.0.0.1, so the page can be watched
-# and clicked from this machine and nowhere else -- over noVNC, watching also
-# means being able to interact. Chrome's DevTools port is deliberately not
-# published at all: it binds to loopback inside the container, so btrix talks
-# to it with `exec` from inside instead.
+# Two ports, both bound to 127.0.0.1 so the browser can be watched and clicked
+# from this machine and nowhere else -- over noVNC, watching also means being
+# able to interact.
+#
+# 9223 is the page to open: create-login-profile serves an HTML wrapper there
+# that embeds the browser in an iframe. 6080 is the bare VNC websocket that
+# iframe then connects to, which returns an empty reply if opened directly.
+# Publishing only 6080, as this did, left the browser unreachable.
+#
+# Chrome's DevTools port is deliberately not published at all: it binds to
+# loopback inside the container, so btrix talks to it with `exec` from inside
+# instead.
 
 set -euo pipefail
 
@@ -37,6 +44,7 @@ fi
 exec "$engine" run \
   --rm \
   --name "$name" \
+  -p 127.0.0.1:9223:9223 \
   -p 127.0.0.1:6080:6080 \
   "webrecorder/browsertrix-crawler:${BTRIX_CRAWLER_VERSION:-latest}" \
   create-login-profile \

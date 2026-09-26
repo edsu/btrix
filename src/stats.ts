@@ -11,6 +11,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { readConfig } from "./config.ts";
 import { isCrawlRunning } from "./engine.ts";
 import { promotedArchive } from "./outcome.ts";
 import { type CrawlPhase, emptyFacts, foldLine, type LogFacts, type PendingPage } from "./log.ts";
@@ -56,6 +57,14 @@ export interface CrawlStats {
   lastProblem?: string;
   pending: PendingPage[];
   version?: string;
+  /**
+   * Port the live screencast is served on, when this run enabled one.
+   *
+   * Undefined means there is nothing to watch, which is not the same as "the
+   * default port": a config without `screencastPort` gets no screencast at
+   * all, and offering a link to one would send people to a dead port.
+   */
+  screencastPort?: number;
 
   bytes: { archive?: number; profile?: number; wacz?: number };
   free?: number;
@@ -74,6 +83,17 @@ export interface CrawlStats {
   windowMs: number;
 }
 
+/**
+ * Where a screencast on `port` can be watched.
+ *
+ * Loopback, matching what run.sh publishes: a crawl running with a profile
+ * shows logged-in pages, so this is not something to offer on a routable
+ * address. Shared so the widget's link and `/screencast` cannot disagree.
+ */
+export function screencastUrl(port: number): string {
+  return `http://127.0.0.1:${port}/`;
+}
+
 const MAX_SAMPLES = 60;
 const SIZE_REFRESH_MS = 5_000;
 
@@ -87,6 +107,8 @@ export class CrawlTailer {
   private readonly remainders = new Map<string, string>();
   private readonly samples: CrawlSample[] = [];
   private sizes: { archive?: number; profile?: number; wacz?: number; free?: number; at: number } = { at: 0 };
+  /** Resolved once and memoized; `undefined` inside means "not looked up yet". */
+  private screencast: { port?: number } | undefined;
 
   /**
    * `root` is whatever directory holds `collections/` — a run directory under
@@ -97,6 +119,30 @@ export class CrawlTailer {
     this.config = config;
     this.root = root;
     this.dir = path.join(root, "collections", name);
+  }
+
+  /**
+   * The screencast port this run was started with, from the copy of the config
+   * that `prepareRun` left in the run directory.
+   *
+   * That copy rather than the live one in the store: the config may have been
+   * edited since, and the port that matters is the one the running crawler was
+   * given. Read once and memoized, since a run's own copy cannot change under
+   * it, and this is consulted on every 1 Hz tick.
+   */
+  private screencastPort(): number | undefined {
+    if (this.screencast) return this.screencast.port;
+    this.screencast = { port: undefined };
+    // A legacy or hand-run directory has no config name to look up, so it gets
+    // no link rather than a guess.
+    if (!this.config) return undefined;
+    for (const ext of [".yaml", ".yml"]) {
+      const file = path.join(this.root, "config", `${this.config}${ext}`);
+      if (!fs.existsSync(file)) continue;
+      this.screencast = { port: readConfig(file, this.config).screencastPort };
+      break;
+    }
+    return this.screencast.port;
   }
 
   private logFiles(): string[] {
@@ -243,6 +289,7 @@ export class CrawlTailer {
       lastProblem: f.lastProblem,
       pending: f.pendingPages,
       version: f.version,
+      screencastPort: this.screencastPort(),
       bytes,
       free,
       waczPath,

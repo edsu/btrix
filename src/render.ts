@@ -13,7 +13,24 @@ import { SAMPLE, type PagesReport } from "./pages.ts";
 import { nextStep } from "./inventory.ts";
 import { humanBytes, humanDuration } from "./sizes.ts";
 import { untrusted, UNTRUSTED_NOTE } from "./untrusted.ts";
-import type { CrawlStats } from "./stats.ts";
+import { screencastUrl, type CrawlStats } from "./stats.ts";
+
+/**
+ * Wrap text in an OSC 8 hyperlink, so a terminal that supports them opens the
+ * url on a click. Byte-for-byte what pi-tui's `hyperlink` emits; written out
+ * to keep this module free of the harness the way its tests assume. OSC 8 is a
+ * terminal convention, not a pi one -- pi's part is resolving the click, by
+ * scanning the composed frame for exactly this sequence.
+ *
+ * Only ever called behind the caller's `hyperlinks` flag. Not every terminal
+ * merely ignores an unknown OSC: `screen`, and tmux that does not forward
+ * them, are why pi gates every hyperlink it emits on `getCapabilities()`, and
+ * why a user can switch them off in settings. Emitting regardless would make
+ * this the one place in the app that overrides that.
+ */
+function osc8(text: string, url: string): string {
+  return `\u001b]8;;${url}\u001b\\${text}\u001b]8;;\u001b\\`;
+}
 
 /**
  * Structural stand-in for pi's Theme, so this module (and its tests) do not
@@ -72,7 +89,15 @@ function percent(s: CrawlStats): string {
  * Two lines above the editor, repainted on each poll tick. No model turn is
  * involved, which is the entire point of the exercise.
  */
-export function renderWidget(s: CrawlStats, theme: ThemeLike = plainTheme): string[] {
+export interface WidgetOptions {
+  /**
+   * Whether the terminal will render OSC 8 hyperlinks. Off unless a caller
+   * says otherwise, since the caller is the only one who can ask pi.
+   */
+  hyperlinks?: boolean;
+}
+
+export function renderWidget(s: CrawlStats, theme: ThemeLike = plainTheme, opts: WidgetOptions = {}): string[] {
   const dim = (t: string) => theme.fg("dim", t);
   const sep = dim(" · ");
 
@@ -121,7 +146,16 @@ export function renderWidget(s: CrawlStats, theme: ThemeLike = plainTheme): stri
   if (s.state === "crawling" && s.sinceLastPage !== undefined && s.sinceLastPage > 120_000) {
     detail.push(theme.fg("warning", `no new page ${humanDuration(s.sinceLastPage)}`));
   }
-  if (s.state === "crawling") detail.push(dim("screencast :9037"));
+  // Only when this run actually enabled one. The hint used to be
+  // unconditional and hardcoded to :9037, which pointed at a dead port for any
+  // config that left `screencastPort` out -- the crawler's default is off.
+  if (s.state === "crawling" && s.screencastPort) {
+    const port = s.screencastPort;
+    const label = `screencast :${port}`;
+    // The port stays visible either way, so a terminal without hyperlinks
+    // loses the click and nothing else.
+    detail.push(dim(opts.hyperlinks ? osc8(label, screencastUrl(port)) : label));
+  }
 
   const lines = [head.join(" ") + (progress.length ? sep + progress.join(sep) : "")];
   if (detail.length) lines.push("      " + detail.join(sep));

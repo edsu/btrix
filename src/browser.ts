@@ -25,8 +25,28 @@ import { launchChrome, type LocalChrome } from "./localchrome.ts";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BROWSER_SH = path.join(HERE, "..", "scripts", "browser.sh");
 
-/** noVNC, where the container's browser can be watched and clicked. */
-export const VNC_PORT = 6080;
+/**
+ * `create-login-profile` opens two ports, and only one of them is a web page.
+ *
+ * 9223 serves the profile UI: an HTML page holding an iframe pointed at the
+ * browser, and the "Create Profile" button that writes the tarball. 6080 is
+ * the bare VNC websocket that iframe connects to -- loading it in a browser
+ * returns an empty reply, and a real VNC client would want the password the
+ * UI page passes for you.
+ *
+ * So 9223 is what a person opens and 6080 is what the page then talks to.
+ * Both have to be published; only one is worth showing anybody. btrix used to
+ * offer 6080, which answered nothing and, on the profile path, hid the only
+ * button that finishes the job.
+ */
+export const PROFILE_UI_PORT = 9223;
+/**
+ * The VNC websocket the profile UI's iframe connects to. Published by
+ * browser.sh and create-profile.sh, never opened directly. Named rather than
+ * written as a literal wherever it is mentioned: confusing these two is the
+ * bug this pair of constants exists to prevent.
+ */
+export const VNC_WEBSOCKET_PORT = 6080;
 const READY_TIMEOUT_MS = 180_000;
 
 /**
@@ -54,8 +74,8 @@ export interface OpenResult {
   url?: string;
   title?: string;
   kind?: BrowserKind;
-  /** Where to watch it, for the container browser. */
-  vnc?: string;
+  /** Where to watch it, for the container browser. The profile UI, not the websocket. */
+  watch?: string;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -77,8 +97,14 @@ export class ScratchBrowser {
     return this.kind;
   }
 
-  vncUrl(): string {
-    return `http://127.0.0.1:${VNC_PORT}/`;
+  /**
+   * The page to open to watch and click this browser.
+   *
+   * 127.0.0.1 rather than localhost: the publish is IPv4-only and localhost
+   * resolves to ::1 first on macOS.
+   */
+  watchUrl(): string {
+    return `http://127.0.0.1:${PROFILE_UI_PORT}/`;
   }
 
   private target(): CdpTarget | undefined {
@@ -97,7 +123,7 @@ export class ScratchBrowser {
     // Already have one of the right kind: just move it.
     if (this.kind === wanted) {
       const moved = await navigate(this.target()!, url);
-      return { ...moved, kind: this.kind, vnc: this.kind === "container" ? this.vncUrl() : undefined };
+      return { ...moved, kind: this.kind, watch: this.kind === "container" ? this.watchUrl() : undefined };
     }
     // A different kind was asked for, so close the old one first.
     if (this.kind) await this.stop();
@@ -141,7 +167,7 @@ export class ScratchBrowser {
     while (Date.now() < deadline) {
       await sleep(2_000);
       const info = await pageInfo({ container: this.container });
-      if (info.ok) return { ok: true, url: info.url, title: info.title, kind: "container", vnc: this.vncUrl() };
+      if (info.ok) return { ok: true, url: info.url, title: info.title, kind: "container", watch: this.watchUrl() };
       last = info.error ?? last;
     }
     // Same as openLocal: a browser that never became ready must not be left

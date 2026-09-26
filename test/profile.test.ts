@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CrawlMonitor } from "../src/monitor.ts";
 import { CONTAINER_PROFILES, findProfile, listProfiles, safeProfileName } from "../src/profile.ts";
 import { ensureStore, resolveStore, type Store } from "../src/store.ts";
-import { createTools } from "../src/tools.ts";
+import { createTools, profileInstructions } from "../src/tools.ts";
 
 let dir: string;
 let store: Store;
@@ -66,6 +66,68 @@ describe("listProfiles", () => {
     fs.writeFileSync(path.join(store.profilesDir, ".example.org.log"), "noise");
     fs.writeFileSync(path.join(store.profilesDir, "notes.txt"), "x");
     expect(listProfiles(store)).toEqual([]);
+  });
+});
+
+describe("profileInstructions", () => {
+  const steps = (over: Partial<Parameters<typeof profileInstructions>[0]> = {}) =>
+    profileInstructions({
+      up: true,
+      host: "example.org",
+      name: "example.org",
+      target: "/store/profiles/example.org.tar.gz",
+      replacing: false,
+      ...over,
+    });
+
+  it("sends the user to the profile UI, not the VNC websocket", () => {
+    // 6080 returns an empty reply to a browser and carries no "Create Profile"
+    // button, so pointing anyone at it meant the login could never be saved.
+    expect(steps()).toContain("http://127.0.0.1:9223");
+    expect(steps()).not.toContain("6080");
+  });
+
+  it("names the control that actually saves the profile", () => {
+    // "Use the on-screen control" left people hunting; the button is labelled.
+    expect(steps()).toContain('Click "Create Profile"');
+  });
+
+  it("keeps the steps readable, with the separators intact", () => {
+    // `.filter(Boolean)` used to strip every "" in this list, collapsing the
+    // heading, the steps and the credential warning into one block.
+    const lines = steps().split("\n");
+    expect(lines.filter((l) => l === "").length).toBeGreaterThanOrEqual(3);
+    // The numbered steps stay together, set off from the prose either side.
+    const first = lines.findIndex((l) => l.includes("1. Open"));
+    expect(lines[first - 1]).toBe("");
+    expect(lines[first + 3]).toBe("");
+  });
+
+  it("separates the replacement warning instead of swallowing it", () => {
+    const lines = steps({ replacing: true }).split("\n");
+    const note = lines.findIndex((l) => l.startsWith("Note: a profile called"));
+    expect(note).toBeGreaterThan(-1);
+    expect(lines[note - 1]).toBe("");
+  });
+
+  it("still refuses to involve itself in the password", () => {
+    expect(steps()).toContain("Do not type the user's password");
+  });
+
+  it("says where it lands and how to reference it", () => {
+    const out = steps();
+    expect(out).toContain("/store/profiles/example.org.tar.gz");
+    expect(out).toContain(`profile: ${CONTAINER_PROFILES}/example.org.tar.gz`);
+  });
+
+  it("warns before replacing an existing profile, and not otherwise", () => {
+    expect(steps({ replacing: true })).toContain("will be replaced");
+    expect(steps({ replacing: false })).not.toContain("will be replaced");
+  });
+
+  it("distinguishes a browser that is up from one still pulling the image", () => {
+    expect(steps({ up: true })).toContain("A browser is running for example.org");
+    expect(steps({ up: false })).toContain("still be pulling the image");
   });
 });
 

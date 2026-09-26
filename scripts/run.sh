@@ -62,12 +62,33 @@ if [ -n "$profiles_dir" ] && [ -d "$profiles_dir" ]; then
   profile_mount=(-v "$profiles_dir":/crawls/profiles/:ro)
 fi
 
-# The screencast is bound to 127.0.0.1: a crawl running with a profile shows
-# logged-in pages, so this is not something to publish to the network.
+# Publish the port the config actually asks for, not a fixed 9037. The crawler
+# serves the screencast on `screencastPort` and listens nowhere else, so a
+# hardcoded publish both misses a config that picks its own port and opens one
+# for a config that has no screencast at all (the crawler's default is 0, off).
+#
+# Matched here as well as in src/config.ts so that running this script by hand
+# still does the right thing. One key, read the same way in both places.
+# `{p;q;}` rather than piping into `head -1`: under `set -o pipefail` a head
+# that exits first leaves sed writing to a closed pipe, and SIGPIPE (141)
+# becomes the substitution's status, which `set -e` turns into a silent death
+# before `exec` -- the same trap ci.yml documents for `tar | grep -q`.
+screencast_port="$(sed -n '/^[[:space:]]*screencastPort:[[:space:]]*[0-9]/{s/^[[:space:]]*screencastPort:[[:space:]]*\([0-9][0-9]*\).*/\1/p;q;}' "$run_dir/$config")"
+publish=()
+if [ -n "$screencast_port" ] && [ "$screencast_port" -gt 0 ]; then
+  # Bound to 127.0.0.1: a crawl running with a profile shows logged-in pages,
+  # so this is not something to publish to the network.
+  publish=(-p "127.0.0.1:$screencast_port:$screencast_port")
+fi
+
+# ${arr[@]+"${arr[@]}"} rather than plain "${arr[@]}": bash 3.2, which is what
+# /bin/bash is on macOS, treats an empty array as unset and `set -u` then kills
+# the script. Reachable both for a config with no screencast and for a run with
+# no profiles directory.
 exec "$engine" run \
-  -p 127.0.0.1:9037:9037 \
+  ${publish[@]+"${publish[@]}"} \
   --rm \
   -v "$run_dir":/crawls/ \
-  "${profile_mount[@]}" \
+  ${profile_mount[@]+"${profile_mount[@]}"} \
   "webrecorder/browsertrix-crawler:$VERSION" \
   crawl --config "/crawls/$config"
