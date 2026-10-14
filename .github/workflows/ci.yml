@@ -125,8 +125,13 @@ jobs:
           npm init -y >/dev/null
           npm install "./$tarball"
           cd "$(mktemp -d)"
+          # A nonzero exit is the result this step wants, and the runner's
+          # shell is `bash -e`, which `set -uo pipefail` above does not undo.
+          # Without this the step aborts on the capture and never asserts.
+          set +e
           out="$(BTRIX_AGENT_DIR="$(mktemp -d)" "$work/node_modules/.bin/btrix" --not-a-real-flag 2>&1)"
           code=$?
+          set -e
           echo "$out"
           # Nothing installs pi globally on a runner, so a fallback cannot find
           # one: it prints the launcher's own message and exits 127.
