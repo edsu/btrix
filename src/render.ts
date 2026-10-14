@@ -86,8 +86,13 @@ function percent(s: CrawlStats): string {
 }
 
 /**
- * Two lines above the editor, repainted on each poll tick. No model turn is
+ * The block above the editor, repainted on each poll tick. No model turn is
  * involved, which is the entire point of the exercise.
+ *
+ * One row of state and progress, then a row of sizes and counts, then, while a
+ * run is fetching, a row for the screencast (when the config asked for one)
+ * and a row for the page in flight. So two rows for a finished crawl and up to
+ * four for a live one.
  */
 export interface WidgetOptions {
   /**
@@ -146,19 +151,28 @@ export function renderWidget(s: CrawlStats, theme: ThemeLike = plainTheme, opts:
   if (s.state === "crawling" && s.sinceLastPage !== undefined && s.sinceLastPage > 120_000) {
     detail.push(theme.fg("warning", `no new page ${humanDuration(s.sinceLastPage)}`));
   }
-  // Only when this run actually enabled one. The hint used to be
-  // unconditional and hardcoded to :9037, which pointed at a dead port for any
-  // config that left `screencastPort` out -- the crawler's default is off.
-  if (s.state === "crawling" && s.screencastPort) {
-    const port = s.screencastPort;
-    const label = `screencast :${port}`;
-    // The port stays visible either way, so a terminal without hyperlinks
-    // loses the click and nothing else.
-    detail.push(dim(opts.hyperlinks ? osc8(label, screencastUrl(port)) : label));
-  }
-
   const lines = [head.join(" ") + (progress.length ? sep + progress.join(sep) : "")];
   if (detail.length) lines.push("      " + detail.join(sep));
+
+  // A row of its own, rather than one more entry on the detail line.
+  //
+  // Measured on the crawl the README prints, that line is 61 columns of sizes
+  // and counts. The old `· screencast :9037` took it to 80, already at the
+  // edge of a default terminal; spelling the url out takes it to 97. The
+  // widget clips rather than wraps, so the url came out cut in half, and on a
+  // row carrying five facts the one worth copying is the first thing lost.
+  // Alone it is 39 columns and survives any sane width.
+  //
+  // Shown only while a run is fetching, and only where the config set
+  // `screencastPort` -- the crawler's default is 0, off, and this hint used to
+  // claim :9037 for runs serving nothing there.
+  if (s.state === "crawling" && s.screencastPort) {
+    const at = screencastUrl(s.screencastPort);
+    // The word labels the row; the url alone carries the link. The url stays
+    // legible either way, so a terminal without hyperlinks loses the click and
+    // keeps something to copy.
+    lines.push("      " + dim(`screencast ${opts.hyperlinks ? osc8(at, at) : at}`));
+  }
 
   const url = s.pending[0]?.url;
   if (url && s.state === "crawling") {

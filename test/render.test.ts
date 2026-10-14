@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import {
@@ -82,10 +83,56 @@ describe("renderWidget", () => {
   });
 
   it("drops the screencast hint once the crawl is not running", () => {
-    expect(renderWidget(stats(), plainTheme).join("\n")).toContain("screencast :9037");
+    expect(renderWidget(stats(), plainTheme).join("\n")).toContain("screencast http://127.0.0.1:9037/");
     expect(renderWidget(stats({ state: "done", containerRunning: false }), plainTheme).join("\n")).not.toContain(
       "screencast",
     );
+  });
+
+  it("gives the screencast a row of its own", () => {
+    const lines = renderWidget(stats(), plainTheme);
+    const row = lines.find((l) => l.includes("screencast"));
+    expect(row).toBe("      screencast http://127.0.0.1:9037/");
+    // Nothing else shares the row, and the metrics keep theirs.
+    expect(row).not.toContain("free");
+    expect(lines.find((l) => l.includes("free"))).not.toContain("screencast");
+
+    // It sits above `fetching`, which only appears with a page in flight.
+    // Both indexes are checked present: findIndex returns -1 for a missing
+    // row, and -1 is below every real index, so the ordering assertion alone
+    // would still pass with the screencast row deleted outright.
+    const withPage = renderWidget(stats({ pending: [{ url: "https://example.org/a" } as never] }), plainTheme);
+    const cast = withPage.findIndex((l) => l.includes("screencast"));
+    const fetching = withPage.findIndex((l) => l.includes("fetching"));
+    expect(cast).toBeGreaterThanOrEqual(0);
+    expect(fetching).toBeGreaterThanOrEqual(0);
+    expect(cast).toBeLessThan(fetching);
+  });
+
+  it("keeps a busy crawl inside 80 columns, which is why the row exists", () => {
+    // The default fixture is too thin to prove anything: its rows run 39, 29
+    // and 39 columns, so the url would fit on the detail line there and this
+    // guard would pass with the regression reintroduced. This is the crawl the
+    // README prints -- sizes, a profile, free space, rate limiting, rates and
+    // a page in flight -- where the detail line is 61 columns, 80 with the old
+    // `· screencast :9037`, and 97 with the url spelled out inline.
+    const busy = renderWidget(
+      stats({
+        name: "sulnews",
+        rateLimited: 3,
+        pagesPerMin: 3.2,
+        bytesPerMin: 1.2 * 1024 ** 2,
+        bytes: { archive: 880 * 1024 ** 2, profile: 300 * 1024 ** 2 },
+        pending: [{ url: "https://library.stanford.edu/news/some-page" } as never],
+      }),
+      plainTheme,
+    );
+    expect(busy.some((l) => l.includes("screencast"))).toBe(true);
+    for (const line of busy) expect(visibleWidth(line)).toBeLessThanOrEqual(80);
+    // The detail row carries the metrics and leaves the url alone.
+    const detail = busy.find((l) => l.includes("free"))!;
+    expect(visibleWidth(detail)).toBe(61);
+    expect(visibleWidth(detail) + " · screencast http://127.0.0.1:9037/".length).toBeGreaterThan(80);
   });
 
   it("offers no screencast when the run did not enable one", () => {
@@ -97,7 +144,9 @@ describe("renderWidget", () => {
   });
 
   it("reports the port the run actually used, not the template's", () => {
-    expect(renderWidget(stats({ screencastPort: 9999 }), plainTheme).join("\n")).toContain("screencast :9999");
+    expect(renderWidget(stats({ screencastPort: 9999 }), plainTheme).join("\n")).toContain(
+      "screencast http://127.0.0.1:9999/",
+    );
   });
 
   it("makes the screencast hint an OSC 8 link to the loopback screencast", () => {
@@ -105,23 +154,57 @@ describe("renderWidget", () => {
     // Opening sequence carries the url, and the link is closed again, or every
     // later cell on the row stays clickable.
     expect(line).toContain(`\u001b]8;;http://127.0.0.1:9999/\u001b\\`);
-    expect(line).toContain(`screencast :9999\u001b]8;;\u001b\\`);
+    // The url is the link text; the word labelling the row sits outside it, so
+    // the closing sequence follows the url.
+    expect(line).toContain(`http://127.0.0.1:9999/\u001b]8;;\u001b\\`);
+    expect(line).toContain("screencast \u001b]8;;");
   });
 
   it("emits no escape sequences when the terminal will not honour them", () => {
     // screen, non-forwarding tmux, and `terminal.hyperlinks: false` all reach
     // here; the port must still be readable so /screencast remains usable.
     const plain = renderWidget(stats({ screencastPort: 9037 }), plainTheme).join("\n");
-    expect(plain).toContain("screencast :9037");
+    expect(plain).toContain("screencast http://127.0.0.1:9037/");
     expect(plain).not.toContain("\u001b]8;;");
   });
 
+  it("renders exactly what the README prints", () => {
+    // The widget's shape is written out in three places: here, README.md, and
+    // the mock on the landing page. This commit had to change all three, and
+    // nothing in CI noticed when one lagged. Pinning the README to the real
+    // output makes that copy answerable; docs/index.html stays by hand.
+    const readme = fs.readFileSync(new URL("../README.md", import.meta.url), "utf8");
+    const block = /```\n(btrix \u2502 crawling sulnews[\s\S]*?)```/.exec(readme)?.[1];
+    expect(block, "README no longer contains the sulnews widget block").toBeDefined();
+
+    const rendered = renderWidget(
+      stats({
+        name: "sulnews",
+        crawled: 142,
+        total: 201,
+        rateLimited: 3,
+        pagesPerMin: 3.2,
+        bytesPerMin: 1.2 * 1024 ** 2,
+        bytes: { archive: 880 * 1024 ** 2, profile: 300 * 1024 ** 2 },
+        free: 12 * 1024 ** 3,
+        pending: [{ url: "https://library.stanford.edu/news/some-page" } as never],
+      }),
+      plainTheme,
+    ).join("\n");
+    expect(rendered).toBe(block!.trimEnd());
+  });
+
   it("keeps the link zero-width, so the clipped widget still fits", () => {
-    const linked = renderWidget(stats({ screencastPort: 9037 }), plainTheme, { hyperlinks: true }).join("\n");
-    const plain = renderWidget(stats({ screencastPort: undefined }), plainTheme).join("\n");
-    // The escape sequences occupy no columns: the linked line is longer in
-    // characters but no wider on screen than its label makes it.
-    expect(visibleWidth(linked)).toBe(visibleWidth(plain) + " · screencast :9037".length);
+    const row = (hyperlinks: boolean) =>
+      renderWidget(stats({ screencastPort: 9037 }), plainTheme, { hyperlinks }).find((l) => l.includes("screencast"))!;
+    const linked = row(true);
+    const plain = row(false);
+
+    // Same columns on screen, more characters in the string: the escapes take
+    // no width, which is what keeps the clipped widget from corrupting a frame.
+    expect(visibleWidth(linked)).toBe(visibleWidth(plain));
+    expect(linked.length).toBeGreaterThan(plain.length);
+    expect(visibleWidth(linked)).toBe("      screencast http://127.0.0.1:9037/".length);
   });
 });
 
