@@ -57,6 +57,19 @@ jobs:
       - name: vendored bundle matches its recorded digests
         run: ./scripts/vendor-replay.sh --verify
 
+      # `npm ci` does not check this. It reconciles dependencies against the
+      # lock and says nothing about the root package's own version, so the two
+      # drifted from 0.1.0 to 0.1.5 with every job green. Nothing published
+      # broke -- npm keeps package-lock.json out of the tarball, so no
+      # consumer ever saw it -- but "the lock is a faithful record of this
+      # commit" is the property the vendored-digest step above exists to
+      # protect, and this is the same claim about a different file.
+      #
+      # The usual cause is editing the version by hand; `npm version` writes
+      # both files, which is what the failure message says to do.
+      - name: package.json and its lock agree on the version
+        run: node scripts/check-version.mjs
+
   # 0.1.0 shipped an install that could not start: bin/btrix.js imported .ts
   # files, and node refuses to strip types under node_modules. Every test
   # passed, because `npm link` resolves the symlink to a path outside
