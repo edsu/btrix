@@ -1,0 +1,47 @@
+# Alerts and security updates are switched on in the repository settings, and
+# were already reporting before this file existed. This adds the other half:
+# routine version updates, so a dependency moves on a schedule rather than only
+# when something is found wrong with it.
+
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # The two halves of pi are released together and btrix imports from both,
+    # so a PR that moved one and left the other would pair a new API against an
+    # old renderer. Grouping them means the pair arrives, or neither does.
+    groups:
+      pi:
+        patterns:
+          - "@earendil-works/*"
+      # Everything that only has to hold up under `npm test` and `tsc`, in one
+      # PR rather than four.
+      dev:
+        dependency-type: development
+    ignore:
+      # Held at ^22 on purpose, to match `engines: node >=22.19.0`. Typing
+      # against a newer Node than the floor lets a call that does not exist on
+      # 22.19 typecheck clean here and throw for whoever installed on the
+      # oldest Node btrix claims to support, and CI would not catch it: the job
+      # runs 22.19 but would be checking against the newer types. The lockfile
+      # still takes 22.x patches; only the major is declined.
+      #
+      # Raising this is a decision about the support floor, so it belongs in a
+      # PR that moves `engines` at the same time -- not in an automatic bump.
+      - dependency-name: "@types/node"
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # checkout and setup-node are the whole set, and they move together often
+    # enough that two PRs a release is noise.
+    groups:
+      actions:
+        patterns:
+          - "*"
