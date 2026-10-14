@@ -90,7 +90,8 @@ the terminal title:
 
 ```
 btrix │ crawling sulnews · 142/201 · 71% · 3.2 pg/min · 1.2M/min
-      archive 880M · profile 300M · 12G free · rate-limited 3 · screencast :9037
+      archive 880M · profile 300M · 12G free · rate-limited 3
+      screencast http://127.0.0.1:9037/
       fetching https://library.stanford.edu/news/some-page
 ```
 

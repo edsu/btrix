@@ -82,9 +82,27 @@ describe("renderWidget", () => {
   });
 
   it("drops the screencast hint once the crawl is not running", () => {
-    expect(renderWidget(stats(), plainTheme).join("\n")).toContain("screencast :9037");
+    expect(renderWidget(stats(), plainTheme).join("\n")).toContain("screencast http://127.0.0.1:9037/");
     expect(renderWidget(stats({ state: "done", containerRunning: false }), plainTheme).join("\n")).not.toContain(
       "screencast",
+    );
+  });
+
+  it("gives the screencast a row of its own, so the url is never clipped", () => {
+    // On the detail line a full url ran to 93 columns, and the widget clips:
+    // the url lost its tail, which is the part worth copying.
+    const lines = renderWidget(stats(), plainTheme);
+    const row = lines.find((l) => l.includes("screencast"));
+    expect(row).toBe("      screencast http://127.0.0.1:9037/");
+    // Nothing else shares the row, and the metrics keep theirs.
+    expect(row).not.toContain("free");
+    expect(lines.find((l) => l.includes("free"))).not.toContain("screencast");
+    for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(80);
+
+    // It sits above `fetching`, which only appears with a page in flight.
+    const withPage = renderWidget(stats({ pending: [{ url: "https://example.org/a" } as never] }), plainTheme);
+    expect(withPage.findIndex((l) => l.includes("screencast"))).toBeLessThan(
+      withPage.findIndex((l) => l.includes("fetching")),
     );
   });
 
@@ -97,7 +115,9 @@ describe("renderWidget", () => {
   });
 
   it("reports the port the run actually used, not the template's", () => {
-    expect(renderWidget(stats({ screencastPort: 9999 }), plainTheme).join("\n")).toContain("screencast :9999");
+    expect(renderWidget(stats({ screencastPort: 9999 }), plainTheme).join("\n")).toContain(
+      "screencast http://127.0.0.1:9999/",
+    );
   });
 
   it("makes the screencast hint an OSC 8 link to the loopback screencast", () => {
@@ -105,23 +125,31 @@ describe("renderWidget", () => {
     // Opening sequence carries the url, and the link is closed again, or every
     // later cell on the row stays clickable.
     expect(line).toContain(`\u001b]8;;http://127.0.0.1:9999/\u001b\\`);
-    expect(line).toContain(`screencast :9999\u001b]8;;\u001b\\`);
+    // The url is the link text; the word labelling the row sits outside it, so
+    // the closing sequence follows the url.
+    expect(line).toContain(`http://127.0.0.1:9999/\u001b]8;;\u001b\\`);
+    expect(line).toContain("screencast \u001b]8;;");
   });
 
   it("emits no escape sequences when the terminal will not honour them", () => {
     // screen, non-forwarding tmux, and `terminal.hyperlinks: false` all reach
     // here; the port must still be readable so /screencast remains usable.
     const plain = renderWidget(stats({ screencastPort: 9037 }), plainTheme).join("\n");
-    expect(plain).toContain("screencast :9037");
+    expect(plain).toContain("screencast http://127.0.0.1:9037/");
     expect(plain).not.toContain("\u001b]8;;");
   });
 
   it("keeps the link zero-width, so the clipped widget still fits", () => {
-    const linked = renderWidget(stats({ screencastPort: 9037 }), plainTheme, { hyperlinks: true }).join("\n");
-    const plain = renderWidget(stats({ screencastPort: undefined }), plainTheme).join("\n");
-    // The escape sequences occupy no columns: the linked line is longer in
-    // characters but no wider on screen than its label makes it.
-    expect(visibleWidth(linked)).toBe(visibleWidth(plain) + " · screencast :9037".length);
+    const row = (hyperlinks: boolean) =>
+      renderWidget(stats({ screencastPort: 9037 }), plainTheme, { hyperlinks }).find((l) => l.includes("screencast"))!;
+    const linked = row(true);
+    const plain = row(false);
+
+    // Same columns on screen, more characters in the string: the escapes take
+    // no width, which is what keeps the clipped widget from corrupting a frame.
+    expect(visibleWidth(linked)).toBe(visibleWidth(plain));
+    expect(linked.length).toBeGreaterThan(plain.length);
+    expect(visibleWidth(linked)).toBe("      screencast http://127.0.0.1:9037/".length);
   });
 });
 

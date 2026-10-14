@@ -146,19 +146,24 @@ export function renderWidget(s: CrawlStats, theme: ThemeLike = plainTheme, opts:
   if (s.state === "crawling" && s.sinceLastPage !== undefined && s.sinceLastPage > 120_000) {
     detail.push(theme.fg("warning", `no new page ${humanDuration(s.sinceLastPage)}`));
   }
-  // Only when this run actually enabled one. The hint used to be
-  // unconditional and hardcoded to :9037, which pointed at a dead port for any
-  // config that left `screencastPort` out -- the crawler's default is off.
-  if (s.state === "crawling" && s.screencastPort) {
-    const port = s.screencastPort;
-    const label = `screencast :${port}`;
-    // The port stays visible either way, so a terminal without hyperlinks
-    // loses the click and nothing else.
-    detail.push(dim(opts.hyperlinks ? osc8(label, screencastUrl(port)) : label));
-  }
-
   const lines = [head.join(" ") + (progress.length ? sep + progress.join(sep) : "")];
   if (detail.length) lines.push("      " + detail.join(sep));
+
+  // A row of its own, rather than one more entry on the detail line.
+  //
+  // Spelling the url out there pushed that line to 93 columns against the 77
+  // it runs at now, and the widget clips rather than wraps, so the url came
+  // out cut in half: the one thing on the line somebody wants to read or copy
+  // is the first thing lost. Shown only while a run is fetching, and only
+  // where the config set `screencastPort` -- the crawler's default is 0, off,
+  // and the hint used to claim :9037 for runs serving nothing there.
+  if (s.state === "crawling" && s.screencastPort) {
+    const at = screencastUrl(s.screencastPort);
+    // The word labels the row; the url alone carries the link. The url stays
+    // legible either way, so a terminal without hyperlinks loses the click and
+    // keeps something to copy.
+    lines.push("      " + dim(`screencast ${opts.hyperlinks ? osc8(at, at) : at}`));
+  }
 
   const url = s.pending[0]?.url;
   if (url && s.state === "crawling") {
