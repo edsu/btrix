@@ -9,7 +9,6 @@
  */
 
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,22 +28,7 @@ const AGENT_DIR = resolveAgentDir();
  * Prefer the pi we were installed with, so a btrix release is pinned to a pi it
  * was tested against, and fall back to one on PATH for a working-tree checkout.
  */
-function findPi() {
-  const require = createRequire(import.meta.url);
-  try {
-    const manifest = require.resolve("@earendil-works/pi-coding-agent/package.json");
-    const dir = path.dirname(manifest);
-    const bin = JSON.parse(fs.readFileSync(manifest, "utf8")).bin;
-    const rel = typeof bin === "string" ? bin : bin?.pi;
-    if (rel) {
-      const entry = path.join(dir, rel);
-      if (fs.existsSync(entry)) return { command: process.execPath, prefix: [entry] };
-    }
-  } catch {
-    // Not installed as a dependency; a checkout run with `npm link` lands here.
-  }
-  return { command: "pi", prefix: [] };
-}
+const { findPi } = await import(path.join(PKG, "src", "pi.js"));
 
 /**
  * Quiet the harness's startup listing — the skills, extensions and resource

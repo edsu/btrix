@@ -103,6 +103,38 @@ jobs:
           cd "$(mktemp -d)"
           BTRIX_AGENT_DIR="$(mktemp -d)" "$work/node_modules/.bin/btrix" --version
 
+      # The job above runs `btrix --version`, which the launcher answers itself
+      # and returns from before it ever looks for pi -- so it passed throughout
+      # a bug that stopped an installed btrix using its own pi at all.
+      #
+      # findPi() resolved pi by requiring its package.json. pi's `exports` does
+      # not list that subpath, and declares only the `import` condition for
+      # `.`, so no CJS route reached it: the resolve threw, the throw landed in
+      # a catch meant for "not installed as a dependency", and every install
+      # either ran whatever pi was on PATH or told the user to install one.
+      #
+      # `-p` would need credentials; an unknown flag makes pi fail on its own
+      # with no network and no account, which is all this needs to prove.
+      - name: an installed btrix runs the pi it shipped with, not one from PATH
+        run: |
+          set -uo pipefail
+          tarball="$(npm pack --silent)"
+          work="$(mktemp -d)"
+          cp "$tarball" "$work/"
+          cd "$work"
+          npm init -y >/dev/null
+          npm install "./$tarball"
+          cd "$(mktemp -d)"
+          out="$(BTRIX_AGENT_DIR="$(mktemp -d)" "$work/node_modules/.bin/btrix" --not-a-real-flag 2>&1)"
+          code=$?
+          echo "$out"
+          # Nothing installs pi globally on a runner, so a fallback cannot find
+          # one: it prints the launcher's own message and exits 127.
+          if [ "$code" -eq 127 ] || printf '%s\n' "$out" | grep -q "could not find its agent runtime"; then
+            echo "btrix did not use its bundled pi" >&2
+            exit 1
+          fi
+
       - name: the viewer is in the tarball, or replay silently goes remote
         run: |
           set -euo pipefail
