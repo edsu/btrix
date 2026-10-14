@@ -86,8 +86,13 @@ function percent(s: CrawlStats): string {
 }
 
 /**
- * Two lines above the editor, repainted on each poll tick. No model turn is
+ * The block above the editor, repainted on each poll tick. No model turn is
  * involved, which is the entire point of the exercise.
+ *
+ * One row of state and progress, then a row of sizes and counts, then, while a
+ * run is fetching, a row for the screencast (when the config asked for one)
+ * and a row for the page in flight. So two rows for a finished crawl and up to
+ * four for a live one.
  */
 export interface WidgetOptions {
   /**
@@ -151,12 +156,16 @@ export function renderWidget(s: CrawlStats, theme: ThemeLike = plainTheme, opts:
 
   // A row of its own, rather than one more entry on the detail line.
   //
-  // Spelling the url out there pushed that line to 93 columns against the 77
-  // it runs at now, and the widget clips rather than wraps, so the url came
-  // out cut in half: the one thing on the line somebody wants to read or copy
-  // is the first thing lost. Shown only while a run is fetching, and only
-  // where the config set `screencastPort` -- the crawler's default is 0, off,
-  // and the hint used to claim :9037 for runs serving nothing there.
+  // Measured on the crawl the README prints, that line is 61 columns of sizes
+  // and counts. The old `· screencast :9037` took it to 80, already at the
+  // edge of a default terminal; spelling the url out takes it to 97. The
+  // widget clips rather than wraps, so the url came out cut in half, and on a
+  // row carrying five facts the one worth copying is the first thing lost.
+  // Alone it is 39 columns and survives any sane width.
+  //
+  // Shown only while a run is fetching, and only where the config set
+  // `screencastPort` -- the crawler's default is 0, off, and this hint used to
+  // claim :9037 for runs serving nothing there.
   if (s.state === "crawling" && s.screencastPort) {
     const at = screencastUrl(s.screencastPort);
     // The word labels the row; the url alone carries the link. The url stays

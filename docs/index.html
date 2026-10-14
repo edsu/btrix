@@ -410,8 +410,8 @@ a:hover{text-decoration-thickness:2px}
   <span class="s-dim">♥ Webrecorder builds the crawler — <a href="https://opencollective.com/webrecorder">opencollective.com/webrecorder</a></span>
 
 <span class="s-mark">btrix</span> <span class="s-rule">│</span> <span class="s-run" id="w-state">crawling</span> wikipedia → web-archiving<span class="s-dim" id="w-tail"> · 0/12 · 0% still discovering · 0.0 pg/min</span>
-      <span class="s-dim" id="w-detail">archive 0B · profile 300M · 12G free</span>
-      <span class="s-dim" id="w-cast">screencast http://127.0.0.1:9037/</span>
+      <span class="s-dim" id="w-detail">archive 0B · profile 300M · 12G free</span><span id="w-castrow">
+      <span class="s-dim">screencast http://127.0.0.1:9037/</span></span>
       <span class="s-dim" id="w-fetch">fetching https://en.wikipedia.org/wiki/Web_archiving</span></pre>
         <figcaption class="screen-cap">
           <span class="screen-note">What btrix shows while a crawl runs. The widget repaints once a second.</span>
@@ -561,7 +561,7 @@ a:hover{text-decoration-thickness:2px}
     wState:  document.getElementById('w-state'),
     wTail:   document.getElementById('w-tail'),
     wDetail: document.getElementById('w-detail'),
-    wCast:   document.getElementById('w-cast'),
+    wCastRow: document.getElementById('w-castrow'),
     wFetch:  document.getElementById('w-fetch')
   };
 
@@ -587,7 +587,6 @@ a:hover{text-decoration-thickness:2px}
       ' · ' + pct + '%' + (discovering ? ' still discovering' : '') +
       ' · ' + rate.toFixed(1) + ' pg/min', TAIL);
     el.wDetail.textContent = fit('archive ' + size + ' · profile 300M · 12G free', DETAIL);
-    el.wCast.textContent = fit('screencast http://127.0.0.1:9037/', DETAIL);
     el.wFetch.textContent = fit('fetching https://en.wikipedia.org/wiki/' + url, FETCH);
   }
 
@@ -601,7 +600,7 @@ a:hover{text-decoration-thickness:2px}
     // Not crawling, so no rate and no screencast — see renderWidget().
     el.wTail.textContent = fit(' · ' + FINAL + '/' + FINAL + ' · 100%', TAIL);
     el.wDetail.textContent = fit('wacz 34M · profile 300M · 12G free', DETAIL);
-    el.wCast.textContent = ''.padEnd(DETAIL);
+    el.wCastRow.hidden = true;
     el.wFetch.textContent = fit('wrote btrix/out/web-archiving.wacz', FETCH);
   }
 
@@ -616,6 +615,7 @@ a:hover{text-decoration-thickness:2px}
     el.wState.textContent = 'crawling';
     el.iState.className = 's-run';
     el.wState.className = 's-run';
+    el.wCastRow.hidden = false;
 
     var i = 0;
     swap = setInterval(function () { url = PAGES[++i % PAGES.length]; }, 460);
