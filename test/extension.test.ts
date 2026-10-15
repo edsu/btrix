@@ -110,13 +110,13 @@ describe("extension wiring", () => {
     const s = stubApi();
     extension(s.api);
     expect([...s.shortcuts.keys()]).toEqual([]);
-    expect([...s.commands.keys()].sort()).toEqual(["btrix", "replay", "screencast"]);
+    expect([...s.commands.keys()].sort()).toEqual(["btrix", "endpoint", "replay", "screencast"]);
   });
 
   it("registers the command, the summary renderer and the lifecycle handlers", () => {
     const s = stubApi();
     extension(s.api);
-    expect([...s.commands.keys()].sort()).toEqual(["btrix", "replay", "screencast"]);
+    expect([...s.commands.keys()].sort()).toEqual(["btrix", "endpoint", "replay", "screencast"]);
     expect([...s.entryRenderers.keys()]).toEqual(["btrix-summary"]);
     expect([...s.events.keys()].sort()).toEqual([
       "model_select",

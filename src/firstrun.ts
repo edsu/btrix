@@ -58,6 +58,7 @@ export function firstRunPanel(state: AuthState): string[] {
     "btrix needs access to a language model before it can do anything.",
     "",
     "  Type  /login   to sign in with a Claude, ChatGPT or Copilot subscription,",
+    "  type  /endpoint  to connect any OpenAI-compatible API by URL and key,",
     "  or set an API key (for example ANTHROPIC_API_KEY) and start btrix again.",
     "",
     "Nothing is sent anywhere until you do. Crawling itself runs locally in a",
