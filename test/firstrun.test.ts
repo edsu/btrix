@@ -64,9 +64,10 @@ describe("firstRunPanel", () => {
     expect(firstRunPanel(probeAuth(probe([{ provider: "anthropic", id: "a" }], ["anthropic"])))).toEqual([]);
   });
 
-  it("names /login and an API key, without naming the runtime", () => {
+  it("names /login, /endpoint and an API key, without naming the runtime", () => {
     const lines = firstRunPanel(probeAuth(probe([{ provider: "anthropic", id: "a" }], []))).join("\n");
     expect(lines).toContain("/login");
+    expect(lines).toContain("/endpoint");
     expect(lines).toContain("ANTHROPIC_API_KEY");
     // The point of the panel is that the user need not know what pi is.
     // Word-boundary matched: "api key" legitimately contains the letters.

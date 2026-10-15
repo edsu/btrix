@@ -14,7 +14,7 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Box, getCapabilities, Text } from "@earendil-works/pi-tui";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { finishRun, type Outcome } from "./src/finish.ts";
 import { statsFor, sweepStranded } from "./src/sweep.ts";
 import { PROFILE_UI_PORT, ScratchBrowser } from "./src/browser.ts";
@@ -31,6 +31,7 @@ import { applyNameCompletion, filterSuggestions, nameSuggestions, tokenBeforeCur
 import { readConfig } from "./src/config.ts";
 import { confirmCrawl, isOpenEnded } from "./src/confirm.ts";
 import { crawlLookup, engineStatus } from "./src/engine.ts";
+import { setupEndpoint } from "./src/endpoint.ts";
 import { firstRunPanel, modelLabel, probeAuth, readyHeader } from "./src/firstrun.ts";
 import { buildInventory } from "./src/inventory.ts";
 import { listProfiles } from "./src/profile.ts";
@@ -274,6 +275,30 @@ export default function (pi: ExtensionAPI) {
           : await ctx.ui.select("Watch which crawl?", withCast.map((w) => w.config));
       if (!chosen) return;
       await openUrl(withCast.find((w) => w.config === chosen)!.url);
+    },
+  });
+
+  // `/login` covers providers pi already knows. Anything else that speaks the
+  // OpenAI API otherwise means hand-writing models.json.
+  pi.registerCommand("endpoint", {
+    description: "Connect to any OpenAI-compatible API by URL and key",
+    handler: async (_args, ctx) => {
+      if (!ctx.hasUI) return;
+      await setupEndpoint(ctx.ui, {
+        // pi's own answer, not resolveAgentDir(): run as `pi -e .` the
+        // runtime reads ~/.pi/agent, and the files must land where it looks.
+        agentDir: getAgentDir(),
+        hasProvider: (id) => ctx.modelRegistry.getProvider(id) !== undefined,
+        refresh: async (id) => {
+          await ctx.modelRegistry.refresh({ providers: [id], allowNetwork: false });
+        },
+        useModel: async (provider, id) => {
+          const model = ctx.modelRegistry.find(provider, id);
+          return model ? pi.setModel(model) : false;
+        },
+      });
+      // A first run that ends here has a model now.
+      if (probeAuth(ctx.modelRegistry as never).ready) ctx.ui.setWidget("btrix:firstrun", undefined);
     },
   });
 
