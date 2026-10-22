@@ -1,5 +1,7 @@
 # btrix
 
+[![ci](https://github.com/edsu/btrix/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/edsu/btrix/actions/workflows/ci.yml)
+
 Make high-fidelity web archives with [Browsertrix
 Crawler](https://github.com/webrecorder/browsertrix-crawler) by telling your
 favorite LLM what you want archived. Crawls run locally in a container and
