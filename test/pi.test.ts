@@ -19,7 +19,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { findPi } from "../src/pi.js";
+import { findPi, piEnv } from "../src/pi.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PI_PACKAGE = "@earendil-works/pi-coding-agent";
@@ -82,5 +82,19 @@ describe("findPi", () => {
     // entry point from whatever package happened to be there.
     const elsewhere = () => fileURLToPath(new URL("pi.test.ts", import.meta.url).href);
     expect(findPi(elsewhere)).toEqual({ command: "pi", prefix: [] });
+  });
+});
+
+describe("piEnv", () => {
+  it("turns off pi's update notice, which a btrix user cannot act on", () => {
+    // It says to run `pi update`, but btrix pins its own pi: a newer one
+    // arrives with a btrix release, not from that command.
+    expect(piEnv({}, "/agent").PI_SKIP_VERSION_CHECK).toBe("1");
+  });
+
+  it("keeps credentials under btrix's own directory, and passes the rest through", () => {
+    const env = piEnv({ ANTHROPIC_API_KEY: "k", PI_CODING_AGENT_DIR: "/elsewhere" }, "/agent");
+    expect(env.PI_CODING_AGENT_DIR).toBe("/agent");
+    expect(env.ANTHROPIC_API_KEY).toBe("k");
   });
 });
