@@ -19,6 +19,13 @@ import { engine } from "./engine.ts";
 /** Chrome's DevTools port inside the crawler image. */
 export const CDP_PORT = 9221;
 
+/**
+ * How long an expression gets before it is stopped. Long enough to scroll and
+ * wait for content to arrive; short enough that a stuck one is not mistaken
+ * for slow.
+ */
+export const EVAL_TIMEOUT_MS = 20_000;
+
 /** Where to find the browser: in a container, or on this machine. */
 export type CdpTarget = { container: string; port?: number } | { port: number };
 
@@ -39,7 +46,7 @@ export interface CdpResult {
  * from argv so the expression never has to be spliced into the program text.
  */
 const CLIENT = `
-const [, , port, action, payload] = process.argv;
+const [, , port, action, payload, timeoutMs] = process.argv;
 const out = (o) => { process.stdout.write(JSON.stringify(o)); };
 try {
   const list = await (await fetch("http://127.0.0.1:" + port + "/json/list")).json();
@@ -50,12 +57,12 @@ try {
   let id = 0;
   const pending = new Map();
   const logs = [];
-  const send = (method, params = {}) =>
+  const send = (method, params = {}, ms = 20000) =>
     new Promise((res, rej) => {
       const i = ++id;
       pending.set(i, res);
       ws.send(JSON.stringify({ id: i, method, params }));
-      setTimeout(() => { if (pending.delete(i)) rej(new Error(method + " timed out")); }, 20000);
+      setTimeout(() => { if (pending.delete(i)) rej(new Error(method + " timed out")); }, ms);
     });
   ws.addEventListener("message", (e) => {
     const m = JSON.parse(e.data);
@@ -76,8 +83,11 @@ try {
   await new Promise((r) => setTimeout(r, 150));
   logs.length = 0;
 
-  const evaluate = async (expression) => {
-    const r = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true, userGesture: true });
+  const evaluate = async (expression, ms) => {
+    const r = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true, userGesture: true }, ms);
+    // A protocol error, such as "Execution was terminated", has no result at
+    // all; reading one would report success with no value.
+    if (r.error) return { ok: false, error: r.error.message ?? "evaluation failed" };
     const ex = r.result?.exceptionDetails;
     if (ex) return { ok: false, error: ex.exception?.description ?? ex.text ?? "evaluation failed" };
     return { ok: true, value: r.result?.result?.value };
@@ -89,7 +99,36 @@ try {
     // Give the load a moment; a behaviour author cares about the settled page.
     await new Promise((r) => setTimeout(r, 2500));
   } else if (action === "eval") {
-    const r = await evaluate(payload);
+    const limit = Number(timeoutMs);
+    const secs = Math.round(limit / 1000) + "s";
+    // The protocol's own wait is only a backstop here; the deadline below is
+    // the one that counts.
+    const running = evaluate(payload, limit + 10000).catch((e) => ({ ok: false, error: String(e.message ?? e) }));
+    let timer;
+    let r = await Promise.race([running, new Promise((res) => { timer = setTimeout(() => res(undefined), limit); })]);
+    clearTimeout(timer);
+    if (r === undefined) {
+      // Only this connection can stop what it started: once it closes, a busy
+      // loop keeps the page and nothing else gets an answer from it. But
+      // terminateExecution stops whatever runs *next* when nothing is running,
+      // as with a promise that never settles, so first ask whether the page is
+      // still answering at all.
+      const answers = (ms) => send("Runtime.evaluate", { expression: "0", returnByValue: true }, ms).then(() => true, () => false);
+      const late = "the expression did not finish within " + secs;
+      if (await answers(1000)) {
+        r = { ok: false, error: late + "; btrix stopped waiting, but anything it scheduled may still run" };
+      } else {
+        await send("Runtime.terminateExecution", {}, 5000).catch(() => undefined);
+        r = (await answers(5000))
+          ? { ok: false, error: late + " and was stopped" }
+          : {
+              ok: false,
+              error:
+                late + " and could not be stopped, so the page is stuck: " +
+                "close the browser with btrix_browser stop and open the page again",
+            };
+      }
+    }
     const where = await evaluate("[location.href, document.title]");
     out({ ...r, console: logs, url: where.value?.[0], title: where.value?.[1] });
     ws.close();
@@ -111,8 +150,11 @@ try {
  * stdin and the expression as an argument, so nothing has to be escaped into
  * source text.
  */
-async function run(target: CdpTarget, action: string, payload: string): Promise<CdpResult> {
-  const args = [String(targetPort(target)), action, payload];
+async function run(target: CdpTarget, action: string, payload: string, timeoutMs = EVAL_TIMEOUT_MS): Promise<CdpResult> {
+  const args = [String(targetPort(target)), action, payload, String(timeoutMs)];
+  // Outlasts the client's own deadline and the checks after it, so the client
+  // gets to report what happened rather than being killed mid-sentence.
+  const backstopMs = Math.max(45_000, timeoutMs + 25_000);
 
   let command: string;
   let argv: string[];
@@ -134,8 +176,8 @@ async function run(target: CdpTarget, action: string, payload: string): Promise<
     let stderr = "";
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      resolve({ ok: false, error: "the browser did not answer within 45s", console: [] });
-    }, 45_000);
+      resolve({ ok: false, error: `the browser did not answer within ${Math.round(backstopMs / 1000)}s`, console: [] });
+    }, backstopMs);
 
     child.stdout.on("data", (d) => {
       stdout += d;
@@ -166,8 +208,8 @@ async function run(target: CdpTarget, action: string, payload: string): Promise<
 }
 
 /** Evaluate an expression in the open page. */
-export function evaluate(target: CdpTarget, expression: string): Promise<CdpResult> {
-  return run(target, "eval", expression);
+export function evaluate(target: CdpTarget, expression: string, opts: { timeoutMs?: number } = {}): Promise<CdpResult> {
+  return run(target, "eval", expression, opts.timeoutMs);
 }
 
 /** Point the browser at a url and wait for it to settle. */

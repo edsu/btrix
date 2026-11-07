@@ -22,6 +22,7 @@ import {
   runningProfileCaptures,
   stopCrawl,
 } from "./engine.ts";
+import { EVAL_TIMEOUT_MS } from "./cdp.ts";
 import { applyClean, type CleanTarget, planClean } from "./clean.ts";
 import { buildInventory } from "./inventory.ts";
 import type { CrawlMonitor, WatchTarget } from "./monitor.ts";
@@ -963,7 +964,8 @@ export function createTools(
       "and count again, read scrollHeight. A returned promise is awaited, so an async IIFE can click, wait and " +
       "count in one call. The value comes back as JSON: return counts, strings, or arrays of textContent and " +
       "href, never an element or NodeList, which arrive as empty objects and look like nothing matched. It is " +
-      `cut off at ${EVAL_VALUE_MAX.toLocaleString("en-US")} characters. It runs only in the throwaway browser ` +
+      `cut off at ${EVAL_VALUE_MAX.toLocaleString("en-US")} characters. An expression still running after ` +
+      `${EVAL_TIMEOUT_MS / 1000} seconds is stopped, so split a longer wait across calls. It runs only in the throwaway browser ` +
       "btrix_browser opened — a fresh profile with nothing signed in — and never the user's own browsing " +
       "session. Check every selector here against the real page before putting it in a behavior.",
     promptSnippet: "Evaluate JavaScript in the scratch browser's page, to check a selector before using it",
