@@ -36,7 +36,14 @@ describe.skipIf(!chrome)("evaluating in a real Chrome", () => {
       browser.process.kill();
       await exited;
     }
-    fs.rmSync(profile, { recursive: true, force: true, maxRetries: 3 });
+    // On macOS Chrome's helper processes outlive the main one and keep writing
+    // for a moment, so retry, and then leave a temporary directory behind
+    // rather than fail a test that passed -- as ScratchBrowser.stop does.
+    try {
+      fs.rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      // In the OS temp directory, which is cleaned up without us.
+    }
   });
 
   const target = () => ({ port: browser.port });
