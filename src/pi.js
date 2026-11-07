@@ -55,6 +55,22 @@ export function findPi(resolve) {
 }
 
 /**
+ * The environment pi runs under when started by the launcher.
+ *
+ * Credentials, preferences and history go under btrix's own directory. And
+ * pi's update check is off: it tells the user to run `pi update`, which does
+ * nothing for the pi btrix pins -- a newer one arrives with a btrix release.
+ * Under `pi -e` the user's own pi keeps its notice, which is right there.
+ *
+ * @param {NodeJS.ProcessEnv} env
+ * @param {string} agentDir
+ * @returns {NodeJS.ProcessEnv}
+ */
+export function piEnv(env, agentDir) {
+  return { ...env, PI_CODING_AGENT_DIR: agentDir, PI_SKIP_VERSION_CHECK: "1" };
+}
+
+/**
  * The nearest directory at or above `entry` whose package.json is pi's own.
  * The name check matters: the walk would otherwise stop at a nested
  * package.json belonging to something pi bundles.

@@ -121,3 +121,21 @@ describe("the tool list the launcher hands to pi", () => {
     expect(granted).not.toContain("powershell");
   });
 });
+
+describe("the launcher's system prompt", () => {
+  const prompt = fs.readFileSync(path.join(ROOT, "assets", "system-prompt.md"), "utf8");
+
+  it("lists every btrix tool, because pi drops the tools' own one-line summaries under it", () => {
+    // pi renders promptSnippet only when no --system-prompt is given.
+    for (const name of BTRIX_TOOLS) expect(prompt, name).toContain(`\`${name}\``);
+  });
+
+  it("leaves the shared guidance to the extension rather than repeating it", () => {
+    // The extension adds guidance.md as a section in both modes; a copy here
+    // would put it in front of the model twice and let the two drift.
+    const guidance = fs.readFileSync(path.join(ROOT, "assets", "guidance.md"), "utf8");
+    const headings = [...guidance.matchAll(/^## .+$/gm)].map((m) => m[0]);
+    expect(headings.length).toBeGreaterThan(0);
+    for (const h of headings) expect(prompt).not.toContain(h);
+  });
+});

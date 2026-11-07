@@ -66,5 +66,8 @@ describe("engine override", () => {
     // empty environment does not take the override path.
     const found = await engine({});
     expect(found === undefined || found === "podman" || found === "docker").toBe(true);
-  });
+    // Detection really runs here: podman then docker, each allowed 5s. That
+    // is up to 10s by design, and vitest's default 5s failed it on slow
+    // Ubuntu runners while the code was doing exactly what it should.
+  }, 15_000);
 });

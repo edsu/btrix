@@ -229,3 +229,15 @@ describe("the launcher's tool allowlist", () => {
     expect(granted).toEqual(expect.arrayContaining(["ls", "grep", "find"]));
   });
 });
+
+describe("what the tools tell the model", () => {
+  it("gives every tool a one-line summary, which is what pi -e lists", () => {
+    for (const t of createTools(monitor, () => store)) expect(t.promptSnippet, t.name).toBeTruthy();
+  });
+
+  it("keeps usage advice in the description, which reaches the model in both modes", () => {
+    // pi drops promptGuidelines whenever --system-prompt is given, so under
+    // the launcher a guideline is never seen.
+    for (const t of createTools(monitor, () => store)) expect(t.promptGuidelines, t.name).toBeUndefined();
+  });
+});

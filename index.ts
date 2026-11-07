@@ -11,6 +11,7 @@
  * continuously for free, and the model is left the work it is actually good at.
  */
 
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Box, getCapabilities, Text } from "@earendil-works/pi-tui";
@@ -44,6 +45,14 @@ const LOW_DISK_BYTES = 5 * 1024 ** 3;
 
 /** The installed package, which is where the skills keep their reference docs. */
 const PKG_ROOT = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * How to archive well, for every session. The launcher's --system-prompt says
+ * who the model is and what tools it has; this is the rest, and it travels
+ * with the extension so a session started with `pi -e` gets it too. Read at
+ * load so a missing file fails the extension rather than a turn.
+ */
+const GUIDANCE = fs.readFileSync(path.join(PKG_ROOT, "assets", "guidance.md"), "utf8");
 
 const widgetKey = (config: string) => `btrix:${config}`;
 
@@ -190,6 +199,15 @@ export default function (pi: ExtensionAPI) {
     if (!ctx.hasUI) return;
     ctx.ui.setStatus("btrix", ctx.ui.theme.fg("dim", `${store.root} · ${label} · /model to change`));
   };
+
+  // A section rather than a replacement prompt: under `pi -e` pi's own preamble
+  // and tool list stay, and under the launcher this sits beside the prompt it
+  // passed. Set on every run, which pi diffs, so an unchanged section costs
+  // nothing after the first.
+  pi.on("before_agent_start", async (event) => {
+    event.systemPromptOptions.sections.btrix = GUIDANCE;
+    return undefined;
+  });
 
   // Switching with /model has to update the footer, or it quietly keeps
   // reporting the model the session started with.

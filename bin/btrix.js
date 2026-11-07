@@ -28,7 +28,7 @@ const AGENT_DIR = resolveAgentDir();
  * Prefer the pi we were installed with, so a btrix release is pinned to a pi it
  * was tested against, and fall back to one on PATH for a working-tree checkout.
  */
-const { findPi } = await import(path.join(PKG, "src", "pi.js"));
+const { findPi, piEnv } = await import(path.join(PKG, "src", "pi.js"));
 
 /**
  * Quiet the harness's startup listing — the skills, extensions and resource
@@ -162,8 +162,7 @@ const args = [
 
 const child = spawn(command, args, {
   stdio: "inherit",
-  // Keep credentials, preferences and history under btrix's own directory.
-  env: { ...process.env, PI_CODING_AGENT_DIR: AGENT_DIR },
+  env: piEnv(process.env, AGENT_DIR),
 });
 
 child.on("error", (err) => {
