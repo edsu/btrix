@@ -8,6 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { EVAL_TIMEOUT_MS } from "../src/cdp.ts";
 import { CrawlMonitor } from "../src/monitor.ts";
 import { ensureStore, resolveStore, type Store } from "../src/store.ts";
 import { configPath, createTools, EVAL_VALUE_MAX, listConfigs, normalizeName, resolveTarget } from "../src/tools.ts";
@@ -255,6 +256,12 @@ describe("btrix_eval's description", () => {
     // returnByValue: a returned element is {}, which reads as "found nothing".
     expect(description()).toMatch(/JSON/);
     expect(description()).toMatch(/element/i);
+  });
+
+  it("states how long an expression gets, from the limit itself", () => {
+    // A wait-for-content loop longer than this is stopped, so the model has to
+    // know to split it.
+    expect(description()).toContain(`${EVAL_TIMEOUT_MS / 1000} seconds`);
   });
 
   it("states the cap the value is cut at, from the cap itself", () => {
