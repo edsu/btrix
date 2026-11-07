@@ -10,7 +10,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CrawlMonitor } from "../src/monitor.ts";
 import { ensureStore, resolveStore, type Store } from "../src/store.ts";
-import { configPath, createTools, listConfigs, normalizeName, resolveTarget } from "../src/tools.ts";
+import { configPath, createTools, EVAL_VALUE_MAX, listConfigs, normalizeName, resolveTarget } from "../src/tools.ts";
 
 let dir: string;
 let store: Store;
@@ -239,5 +239,33 @@ describe("what the tools tell the model", () => {
     // pi drops promptGuidelines whenever --system-prompt is given, so under
     // the launcher a guideline is never seen.
     for (const t of createTools(monitor, () => store)) expect(t.promptGuidelines, t.name).toBeUndefined();
+  });
+});
+
+describe("btrix_eval's description", () => {
+  const description = () => tool("btrix_eval").description;
+
+  it("says promises are awaited, so click-then-wait fits in one call", () => {
+    // cdp.ts evaluates with awaitPromise; without being told, a model splits
+    // the click and the count across calls and races the page.
+    expect(description()).toMatch(/promise/i);
+  });
+
+  it("says the value comes back as JSON, so a DOM node arrives empty", () => {
+    // returnByValue: a returned element is {}, which reads as "found nothing".
+    expect(description()).toMatch(/JSON/);
+    expect(description()).toMatch(/element/i);
+  });
+
+  it("states the cap the value is cut at, from the cap itself", () => {
+    expect(description()).toContain(EVAL_VALUE_MAX.toLocaleString("en-US"));
+  });
+});
+
+describe("btrix_view's description", () => {
+  it("does not promise a fully local replay unconditionally", () => {
+    // Without the vendored viewer the link goes to replayweb.page, which is
+    // the case that fails in some browsers.
+    expect(tool("btrix_view").description).toMatch(/goes to replayweb\.page instead/);
   });
 });

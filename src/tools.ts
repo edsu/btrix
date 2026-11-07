@@ -65,7 +65,7 @@ function exitDescription(e: { code: number | null; signal: NodeJS.Signals | null
  * leading "@" in case the completion trigger comes along for the ride.
  */
 /** A page can return an arbitrarily large value; this is plenty to judge one by. */
-const EVAL_VALUE_MAX = 2_000;
+export const EVAL_VALUE_MAX = 2_000;
 
 export function normalizeName(raw: string): string {
   return raw.trim().replace(/^@/, "").replace(/\.ya?ml$/, "");
@@ -430,8 +430,9 @@ export function createTools(
     name: "btrix_view",
     label: "Replay",
     description:
-      "Serve a finished archive locally and return a URL that replays it. The viewer is served from the same " +
-      "origin as the archive, so nothing is fetched from the network. The server keeps running until the " +
+      "Serve a finished archive locally and return a URL that replays it. Normally the viewer is served from " +
+      "the same origin as the archive, so nothing is fetched from the network; if the viewer is not installed " +
+      "the link goes to replayweb.page instead, and the result says so. The server keeps running until the " +
       "session ends. Relay any notes in the result; when there are none, there is nothing to warn about.",
     promptSnippet: "Replay a finished crawl in ReplayWeb.page",
     parameters: Type.Object({
@@ -959,12 +960,17 @@ export function createTools(
     description:
       "Evaluate a JavaScript expression in the scratch browser's open page and return its value plus anything it " +
       "logged to the console. This is how to work out a behavior: count what a selector matches, click something " +
-      "and count again, read scrollHeight. It runs only in the throwaway browser btrix_browser opened — a fresh " +
-      "profile with nothing signed in — and never the user's own browsing session. Check every selector here " +
-      "against the real page before putting it in a behavior.",
+      "and count again, read scrollHeight. A returned promise is awaited, so an async IIFE can click, wait and " +
+      "count in one call. The value comes back as JSON: return counts, strings, or arrays of textContent and " +
+      "href, never an element or NodeList, which arrive as empty objects and look like nothing matched. It is " +
+      `cut off at ${EVAL_VALUE_MAX.toLocaleString("en-US")} characters. It runs only in the throwaway browser ` +
+      "btrix_browser opened — a fresh profile with nothing signed in — and never the user's own browsing " +
+      "session. Check every selector here against the real page before putting it in a behavior.",
     promptSnippet: "Evaluate JavaScript in the scratch browser's page, to check a selector before using it",
     parameters: Type.Object({
-      js: Type.String({ description: "An expression. Wrap statements in an IIFE and return a value." }),
+      js: Type.String({
+        description: "An expression. Wrap statements in an IIFE, async if it needs to wait, and return a JSON value.",
+      }),
     }),
     async execute(_id, params) {
       if (!browser) return text("The scratch browser is unavailable: no browser manager was wired up.");
