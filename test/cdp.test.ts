@@ -40,11 +40,12 @@ describe.skipIf(!chrome)("evaluating in a real Chrome", () => {
     // for a moment, so retry, and then leave a temporary directory behind
     // rather than fail a test that passed -- as ScratchBrowser.stop does.
     try {
-      fs.rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+      // Node backs off linearly: 100ms, then 200ms, and so on, about 1.5s in all.
+      fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     } catch {
       // In the OS temp directory, which is cleaned up without us.
     }
-  });
+  }, 20_000);
 
   const target = () => ({ port: browser.port });
 
