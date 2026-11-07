@@ -215,7 +215,7 @@ export function createTools(
       "Start a Browsertrix Crawler crawl for a config in the btrix store. Returns once the crawler is up and " +
       "reporting; the crawl itself keeps running in the background, detached, and survives this session. " +
       "Progress is shown continuously in the TUI widget, so do not poll for it.",
-    promptSnippet: "Start a Browsertrix crawl for a named config",
+    promptSnippet: "Start a Browsertrix crawl for a named config; it runs detached and its progress renders itself",
     parameters: Type.Object({
       config: Type.String({ description: "Config name in the store's config/ directory, without the .yaml extension" }),
     }),
@@ -359,7 +359,7 @@ export function createTools(
     description:
       "Read the current state of a crawl: pages, rates, sizes, free space, failures. Use this to answer a " +
       "question or diagnose a problem — not to watch progress, which the TUI widget already shows.",
-    promptSnippet: "Read the state of a Browsertrix crawl",
+    promptSnippet: "Read the state of a Browsertrix crawl to answer a question, not to watch progress",
     parameters: Type.Object({
       name: Type.Optional(
         Type.String({ description: "Config or collection name. Defaults to the only running or watched crawl." }),
@@ -621,7 +621,7 @@ export function createTools(
       "profile is saved for authenticated crawls. Called with no url, it lists the profiles that already exist. " +
       "You must never enter the user's credentials, and must not ask them for a password: they type it into that " +
       "browser themselves. Relay the instructions in the result verbatim.",
-    promptSnippet: "Create or list browser login profiles for authenticated crawls",
+    promptSnippet: "Create or list login profiles; the user logs in by hand, never you",
     parameters: Type.Object({
       url: Type.Optional(
         Type.String({ description: "Login page or a page on the site to authenticate against. Omit to list profiles." }),
@@ -786,7 +786,7 @@ export function createTools(
       "Never touches archives, configs or profiles — including a wacz still sitting in a run directory " +
       "because the session ended before the crawl did. Reports by default. With remove set, btrix asks " +
       "the user to confirm the exact list before anything is deleted, so show them the report first.",
-    promptSnippet: "Reclaim space from old crawl working directories",
+    promptSnippet: "Report, and with the user's confirmation delete, old crawl working directories",
     parameters: Type.Object({
       // Plain string rather than an enum: the enum helper lives in a package
       // that is only a transitive dependency here, and the value is validated
@@ -960,11 +960,9 @@ export function createTools(
       "Evaluate a JavaScript expression in the scratch browser's open page and return its value plus anything it " +
       "logged to the console. This is how to work out a behavior: count what a selector matches, click something " +
       "and count again, read scrollHeight. It runs only in the throwaway browser btrix_browser opened — a fresh " +
-      "profile with nothing signed in — and never the user's own browsing session.",
-    promptSnippet: "Evaluate JavaScript in the scratch browser's page",
-    promptGuidelines: [
-      "Use btrix_eval to check a selector against the real page before putting it in a behavior.",
-    ],
+      "profile with nothing signed in — and never the user's own browsing session. Check every selector here " +
+      "against the real page before putting it in a behavior.",
+    promptSnippet: "Evaluate JavaScript in the scratch browser's page, to check a selector before using it",
     parameters: Type.Object({
       js: Type.String({ description: "An expression. Wrap statements in an IIFE and return a value." }),
     }),
