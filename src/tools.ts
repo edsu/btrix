@@ -13,7 +13,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type TUnsafe } from "typebox";
 import {
   engineStatus,
   isCrawlRunning,
@@ -23,7 +23,7 @@ import {
   stopCrawl,
 } from "./engine.ts";
 import { EVAL_TIMEOUT_MS } from "./cdp.ts";
-import { applyClean, type CleanTarget, planClean } from "./clean.ts";
+import { applyClean, planClean } from "./clean.ts";
 import { buildInventory } from "./inventory.ts";
 import type { CrawlMonitor, WatchTarget } from "./monitor.ts";
 import type { Inventory } from "./inventory.ts";
@@ -54,6 +54,14 @@ const PROFILE_SH = path.join(HERE, "..", "scripts", "create-profile.sh");
 const STARTUP_TIMEOUT_MS = 180_000;
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: {} });
+
+// A plain {type, enum} rather than Type.Union of literals, which typebox
+// writes as anyOf/const: Google and some other providers mishandle that. pi's
+// own StringEnum does the same, but lives in a package btrix only gets
+// transitively. pi validates arguments against it before execute runs.
+function stringEnum<const T extends readonly string[]>(values: T, opts: { description: string }): TUnsafe<T[number]> {
+  return Type.Unsafe<T[number]>({ type: "string", enum: values, description: opts.description });
+}
 
 /** How a child ended. A signal kill carries a null code, which on its own
  *  renders as the unhelpful "exited with code null". */
@@ -790,23 +798,14 @@ export function createTools(
       "the user to confirm the exact list before anything is deleted, so show them the report first.",
     promptSnippet: "Report, and with the user's confirmation delete, old crawl working directories",
     parameters: Type.Object({
-      // Plain string rather than an enum: the enum helper lives in a package
-      // that is only a transitive dependency here, and the value is validated
-      // below anyway.
-      what: Type.Optional(
-        Type.String({ description: 'One of "failed" (default), "runs", or "both"' }),
-      ),
+      what: Type.Optional(stringEnum(["failed", "runs", "both"], { description: "Failed runs (the default), finished runs, or both" })),
       olderThanDays: Type.Optional(Type.Number({ description: "Only consider directories older than this" })),
       remove: Type.Optional(Type.Boolean({ description: "Actually delete. Defaults to false: report only." })),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const store = getStore();
-      const asked = params.what ? String(params.what) : "failed";
-      if (!["failed", "runs", "both"].includes(asked)) {
-        return text(`"${asked}" is not one of failed, runs, both.`);
-      }
       const plan = await planClean(store, {
-        what: asked as CleanTarget,
+        what: params.what ?? "failed",
         olderThanDays: typeof params.olderThanDays === "number" ? params.olderThanDays : undefined,
       });
 
@@ -878,7 +877,7 @@ export function createTools(
       url: Type.Optional(Type.String({ description: "Page to open. Omit to report what is already open." })),
       stop: Type.Optional(Type.Boolean({ description: "Close the browser." })),
       use: Type.Optional(
-        Type.String({ description: 'Which browser: "local" (default) or "crawler" for the container\'s' }),
+        stringEnum(["local", "crawler"], { description: "Which browser: a local Chrome (the default), or the crawler's own" }),
       ),
     }),
     async execute(_id, params, _signal, onUpdate) {
@@ -911,11 +910,7 @@ export function createTools(
         return text("Only http and https urls can be opened.");
       }
 
-      const asked = params.use ? String(params.use).toLowerCase() : "local";
-      if (!["local", "crawler", "container"].includes(asked)) {
-        return text(`"${asked}" is not a browser. Use "local" or "crawler".`);
-      }
-      const kind = asked === "local" ? "local" : "container";
+      const kind = params.use === "crawler" ? "container" : "local";
 
       // Only the container browser needs an engine.
       if (kind === "container") {

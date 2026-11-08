@@ -241,6 +241,20 @@ describe("what the tools tell the model", () => {
     // the launcher a guideline is never seen.
     for (const t of createTools(monitor, () => store)) expect(t.promptGuidelines, t.name).toBeUndefined();
   });
+
+  it("puts a parameter's few valid values in the schema, not only in prose", () => {
+    const param = (name: string, key: string) => (tool(name).parameters as any).properties[key];
+    expect(param("btrix_clean", "what")).toMatchObject({ type: "string", enum: ["failed", "runs", "both"] });
+    expect(param("btrix_browser", "use")).toMatchObject({ type: "string", enum: ["local", "crawler"] });
+  });
+
+  it("writes enums as a plain enum, which every provider reads", () => {
+    // Google and some others mishandle anyOf/const, which is what a typebox
+    // union of literals produces.
+    for (const t of createTools(monitor, () => store)) {
+      expect(JSON.stringify(t.parameters), t.name).not.toMatch(/"(anyOf|oneOf|const)"/);
+    }
+  });
 });
 
 describe("btrix_eval's description", () => {
