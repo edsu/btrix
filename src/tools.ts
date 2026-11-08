@@ -191,6 +191,20 @@ export function resolveTarget(store: Store, monitor: CrawlMonitor, name: string,
   return undefined;
 }
 
+/**
+ * Which running crawl a name means: its config name, or the collection that
+ * config writes. The engine knows crawls only by config, but status, review
+ * and view all take a collection name, so stop has to as well.
+ */
+export function runningConfigFor(store: Store, running: string[], name: string): string | undefined {
+  const wanted = normalizeName(name);
+  if (running.includes(wanted)) return wanted;
+  return running.find((config) => {
+    const file = configPath(store, config);
+    return file !== undefined && collectionFor(file, config) === wanted;
+  });
+}
+
 function runsWith(store: Store, config: string, collection: string): string[] {
   try {
     return fs
@@ -221,7 +235,8 @@ export function createTools(
     name: "btrix_run",
     label: "Crawl",
     description:
-      "Start a Browsertrix Crawler crawl for a config in the btrix store. Returns once the crawler is up and " +
+      "Start a Browsertrix Crawler crawl for a config in the btrix store. The config must already exist: write " +
+      "it first with the new-crawl skill, or find one with btrix_list. Returns once the crawler is up and " +
       "reporting; the crawl itself keeps running in the background, detached, and survives this session. " +
       "Progress is shown continuously in the TUI widget, so do not poll for it.",
     promptSnippet: "Start a Browsertrix crawl for a named config; it runs detached and its progress renders itself",
@@ -762,21 +777,25 @@ export function createTools(
       "being rate-limited hard, or was started with the wrong scope.",
     promptSnippet: "Stop a running Browsertrix crawl",
     parameters: Type.Object({
-      name: Type.Optional(Type.String({ description: "Config name. Defaults to the only running crawl." })),
+      name: Type.Optional(
+        Type.String({ description: "Config or collection name. Defaults to the only running crawl." }),
+      ),
     }),
     async execute(_id, params) {
       const running = (await runningCrawls()).map((c) => c.config).filter((n): n is string => !!n);
       if (!running.length) return text("No crawl is running.");
 
-      let name = params.name ? normalizeName(String(params.name)) : undefined;
-      if (!name) {
+      let name: string | undefined;
+      if (params.name) {
+        name = runningConfigFor(getStore(), running, String(params.name));
+        if (!name) {
+          return text(`${normalizeName(String(params.name))} is not running. Currently running: ${running.join(", ")}`);
+        }
+      } else {
         if (running.length > 1) {
           return text(`Several crawls are running: ${running.join(", ")}. Say which one to stop.`);
         }
         name = running[0];
-      }
-      if (!running.includes(name!)) {
-        return text(`${name} is not running. Currently running: ${running.join(", ")}`);
       }
 
       const stopped = await stopCrawl(name!);
