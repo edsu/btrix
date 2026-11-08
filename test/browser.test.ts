@@ -7,6 +7,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { Value } from "typebox/value";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ScratchBrowser } from "../src/browser.ts";
 import { CrawlMonitor } from "../src/monitor.ts";
@@ -124,11 +125,13 @@ describe("tool descriptions", () => {
 });
 
 describe("browser kinds", () => {
-  it("refuses a browser it does not have", async () => {
-    expect(said(await run("btrix_browser", { url: "https://example.org/", use: "firefox" }))).toContain(
-      'is not a browser',
-    );
-    expect(browser.isRunning()).toBe(false);
+  it("refuses a browser it does not have", () => {
+    // pi checks arguments against the schema before execute runs, so the
+    // refusal is the schema's.
+    const ok = (use: string) => Value.Check(tool("btrix_browser").parameters, { url: "https://example.org/", use });
+    expect(ok("local")).toBe(true);
+    expect(ok("crawler")).toBe(true);
+    expect(ok("firefox")).toBe(false);
   });
 
   it("reports nothing running before anything starts", () => {
