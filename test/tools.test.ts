@@ -11,7 +11,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EVAL_TIMEOUT_MS } from "../src/cdp.ts";
 import { CrawlMonitor } from "../src/monitor.ts";
 import { ensureStore, resolveStore, type Store } from "../src/store.ts";
-import { configPath, createTools, EVAL_VALUE_MAX, listConfigs, normalizeName, resolveTarget } from "../src/tools.ts";
+import {
+  configPath,
+  createTools,
+  EVAL_VALUE_MAX,
+  listConfigs,
+  normalizeName,
+  resolveTarget,
+  runningConfigFor,
+} from "../src/tools.ts";
 
 let dir: string;
 let store: Store;
@@ -107,6 +115,29 @@ describe("resolveTarget", () => {
   it("returns nothing for a config that has never run", () => {
     writeConfig("sulnews");
     expect(resolveTarget(store, monitor, "sulnews")).toBeUndefined();
+  });
+});
+
+/**
+ * btrix_stop used to take only a config name, while status, review and view
+ * take a collection name too -- so a name the model had just used with one of
+ * them was "not running" to stop.
+ */
+describe("runningConfigFor", () => {
+  it("finds a running crawl by its config name, with or without the extension", () => {
+    writeConfig("sulnews", "collection: stanford-news\n");
+    expect(runningConfigFor(store, ["sulnews"], "sulnews")).toBe("sulnews");
+    expect(runningConfigFor(store, ["sulnews"], "sulnews.yaml")).toBe("sulnews");
+  });
+
+  it("finds a running crawl by its collection name", () => {
+    writeConfig("sulnews", "collection: stanford-news\n");
+    expect(runningConfigFor(store, ["other", "sulnews"], "stanford-news")).toBe("sulnews");
+  });
+
+  it("finds nothing for a name that is neither", () => {
+    writeConfig("sulnews", "collection: stanford-news\n");
+    expect(runningConfigFor(store, ["sulnews"], "elsewhere")).toBeUndefined();
   });
 });
 
@@ -240,6 +271,17 @@ describe("what the tools tell the model", () => {
     // pi drops promptGuidelines whenever --system-prompt is given, so under
     // the launcher a guideline is never seen.
     for (const t of createTools(monitor, () => store)) expect(t.promptGuidelines, t.name).toBeUndefined();
+  });
+
+  it("says btrix_stop takes a collection name as well as a config name", () => {
+    const d = (tool("btrix_stop").parameters as any).properties.name.description;
+    expect(d).toMatch(/config or collection name/i);
+  });
+
+  it("says btrix_run needs a config that has already been written", () => {
+    const d = tool("btrix_run").description.replace(/\s+/g, " ");
+    expect(d).toMatch(/new-crawl/);
+    expect(d).toMatch(/btrix_list/);
   });
 
   it("puts a parameter's few valid values in the schema, not only in prose", () => {
